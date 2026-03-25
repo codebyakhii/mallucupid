@@ -263,36 +263,134 @@ const App: React.FC = () => {
     }
   };
 
+  const mainViews = ['discover', 'friends', 'notifications', 'profile', 'inbox'];
+  const showNav = mainViews.includes(view);
+
+  const navItems = [
+    {
+      id: 'discover',
+      label: 'Discover',
+      icon: (active: boolean) => (
+        <svg className="w-6 h-6" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={active ? 0 : 1.8}>
+          {active
+            ? <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            : <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+          }
+        </svg>
+      ),
+    },
+    {
+      id: 'friends',
+      label: 'Matches',
+      icon: (active: boolean) => (
+        <svg className="w-6 h-6" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={active ? 0 : 1.8}>
+          {active
+            ? <><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></>
+            : <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+          }
+        </svg>
+      ),
+    },
+    {
+      id: 'inbox',
+      label: 'Chat',
+      icon: (active: boolean) => (
+        <svg className="w-6 h-6" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={active ? 0 : 1.8}>
+          {active
+            ? <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+            : <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443h2.387c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+          }
+        </svg>
+      ),
+    },
+    {
+      id: 'notifications',
+      label: 'Alerts',
+      icon: (active: boolean) => (
+        <svg className="w-6 h-6" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={active ? 0 : 1.8}>
+          {active
+            ? <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+            : <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+          }
+        </svg>
+      ),
+    },
+    {
+      id: 'profile',
+      label: 'Profile',
+      icon: (active: boolean) => (
+        currentUser?.imageUrl ? (
+          <div className={`w-7 h-7 rounded-full overflow-hidden ${active ? 'ring-2 ring-[#FF4458]' : 'ring-1 ring-gray-300'}`}>
+            <img src={currentUser.imageUrl} className="w-full h-full object-cover" alt="" />
+          </div>
+        ) : (
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={active ? 0 : 1.8}>
+            {active
+              ? <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+              : <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            }
+          </svg>
+        )
+      ),
+    },
+  ];
+
   return (
     <div className="fixed inset-0 bg-[#fffafa] flex flex-col overflow-hidden">
-      {['discover', 'friends', 'notifications', 'profile', 'inbox'].includes(view) && (
-        <header className="flex items-center justify-between px-6 h-20 bg-[#006400] z-50 shadow-lg">
-          <button onClick={() => setShowLogoutConfirm(true)} className="text-white active:scale-90"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('discover')}><div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-[#006400] font-black">M</div><span className="text-xl font-black text-white">Mallu Cupid</span></div>
-          <button onClick={() => setView('inbox')} className="text-white relative active:scale-90">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-            {!isPro && <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 rounded-full border-2 border-[#006400]" />}
+      {/* Header */}
+      {showNav && (
+        <header className="flex items-center justify-between px-5 h-14 bg-white z-50 border-b border-gray-100">
+          <button onClick={() => setShowLogoutConfirm(true)} className="w-9 h-9 flex items-center justify-center text-gray-400 active:scale-90 transition-transform">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
           </button>
+          <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => setView('discover')}>
+            <div className="w-8 h-8 bg-gradient-to-br from-[#FF4458] to-[#FF7854] rounded-xl flex items-center justify-center shadow-sm">
+              <span className="text-white font-black text-sm">M</span>
+            </div>
+            <span className="text-lg font-black bg-gradient-to-r from-[#FF4458] to-[#FF7854] bg-clip-text text-transparent">mallucupid</span>
+          </div>
+          <div className="w-9 h-9" />
         </header>
       )}
+
       <main className="flex-1 relative overflow-hidden bg-[#fffafa]">{renderContent()}</main>
-      {['discover', 'friends', 'notifications', 'profile', 'inbox'].includes(view) && (
-        <nav className="safe-area-bottom bg-[#006400] flex justify-around py-4 z-50 rounded-t-[2.8rem] shadow-[0_-5px_20px_rgba(0,0,0,0.1)]">
-          {[{ id: 'discover', label: 'Explore' }, { id: 'friends', label: 'Friends' }, { id: 'notifications', label: 'Alerts' }, { id: 'profile', label: 'Profile' }].map(btn => (
-            <button key={btn.id} onClick={() => setView(btn.id as View)} className="flex flex-col items-center gap-1.5 text-white active:scale-90 transition-transform">
-              <span className="text-[10px] font-black uppercase tracking-widest">{btn.label}</span>
-            </button>
-          ))}
+
+      {/* Bottom Navigation */}
+      {showNav && (
+        <nav className="safe-area-bottom bg-white border-t border-gray-100 z-50">
+          <div className="flex justify-around items-center h-16 max-w-md mx-auto">
+            {navItems.map(item => {
+              const isActive = view === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setView(item.id as View)}
+                  className={`flex flex-col items-center justify-center gap-0.5 w-16 h-full transition-colors active:scale-90 ${
+                    isActive ? 'text-[#FF4458]' : 'text-gray-400'
+                  }`}
+                >
+                  {item.icon(isActive)}
+                  <span className={`text-[10px] font-semibold ${isActive ? 'text-[#FF4458]' : 'text-gray-400'}`}>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
       )}
+
+      {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-8">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowLogoutConfirm(false)} />
-          <div className="relative bg-white rounded-[2.5rem] p-10 w-full max-sm shadow-2xl text-center">
-            <h3 className="text-xl font-black uppercase mb-4">Sign Out?</h3>
-            <div className="space-y-3">
-              <button onClick={handleLogout} className="w-full py-4 bg-black text-white rounded-2xl font-black uppercase text-xs">Sign Out</button>
-              <button onClick={() => setShowLogoutConfirm(false)} className="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl font-black uppercase text-xs">Stay</button>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowLogoutConfirm(false)} />
+          <div className="relative bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl text-center">
+            <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" /></svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Sign Out?</h3>
+            <p className="text-sm text-gray-500 mb-6">You'll need to sign in again to access your account.</p>
+            <div className="space-y-2.5">
+              <button onClick={handleLogout} className="w-full py-3.5 bg-red-500 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform">Sign Out</button>
+              <button onClick={() => setShowLogoutConfirm(false)} className="w-full py-3.5 bg-gray-50 text-gray-500 rounded-2xl font-bold text-sm active:scale-95 transition-transform">Cancel</button>
             </div>
           </div>
         </div>

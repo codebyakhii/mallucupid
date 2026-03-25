@@ -19,6 +19,14 @@ export interface VerificationDocs {
   selfie: string;
 }
 
+export interface Lifestyle {
+  drinking: string;
+  smoking: string;
+  workout: string;
+  pets: string;
+  diet: string;
+}
+
 export interface Profile {
   id: string;
   name: string;
@@ -37,12 +45,26 @@ export interface Profile {
   relationshipGoal: RelationshipGoal;
   lookingFor: LookingFor;
   orientation: Orientation;
+  pronouns: string;
+  lifestyle: Lifestyle;
+  jobTitle: string;
+  company: string;
+  education: string;
+  latitude: number | null;
+  longitude: number | null;
+  showMe: string;
+  ageMin: number;
+  ageMax: number;
+  maxDistance: number;
+  showAge: boolean;
+  showDistance: boolean;
+  showOrientation: boolean;
   role?: UserRole;
   status?: 'active' | 'blocked';
   bankInfo?: BankInfo;
   verificationDocs?: VerificationDocs;
   balance?: number;
-  proExpiry?: number; // Timestamp when Pro Plan expires
+  proExpiry?: number;
 }
 
 export interface ProConfig {

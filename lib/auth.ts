@@ -139,6 +139,20 @@ function mapDbToProfile(row: any): Profile {
     relationshipGoal: row.relationship_goal as Profile['relationshipGoal'],
     lookingFor: row.looking_for as Profile['lookingFor'],
     orientation: row.orientation as Profile['orientation'],
+    pronouns: row.pronouns || '',
+    lifestyle: row.lifestyle || { drinking: '', smoking: '', workout: '', pets: '', diet: '' },
+    jobTitle: row.job_title || '',
+    company: row.company || '',
+    education: row.education || '',
+    latitude: row.latitude ?? null,
+    longitude: row.longitude ?? null,
+    showMe: row.show_me || 'Everyone',
+    ageMin: row.age_min ?? 18,
+    ageMax: row.age_max ?? 50,
+    maxDistance: row.max_distance ?? 50,
+    showAge: row.show_age ?? true,
+    showDistance: row.show_distance ?? true,
+    showOrientation: row.show_orientation ?? true,
     role: row.role || 'user',
     status: row.status || 'active',
     balance: row.balance || 0,
@@ -211,4 +225,13 @@ export async function uploadProfileImage(userId: string, file: File): Promise<st
     .getPublicUrl(fileName);
 
   return publicUrl;
+}
+
+// ─── DELETE IMAGE FROM SUPABASE STORAGE ────────────────────────
+export async function deleteProfileImage(imageUrl: string): Promise<void> {
+  const bucketUrl = supabase.storage.from('profile-images').getPublicUrl('').data.publicUrl;
+  const filePath = imageUrl.replace(bucketUrl, '');
+  if (!filePath) return;
+  const { error } = await supabase.storage.from('profile-images').remove([filePath]);
+  if (error) throw new Error(error.message);
 }

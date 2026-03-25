@@ -46,7 +46,7 @@
 ├── WORKFLOW.md                This file
 ├── lib/
 │   ├── supabase.ts           Supabase client initialization
-│   ├── auth.ts               15 auth/profile functions
+│   ├── auth.ts               16 auth/profile functions (incl. deleteProfileImage)
 │   └── location.ts           GPS + OpenStreetMap Nominatim
 ├── components/
 │   ├── DesktopBlocker.tsx    Blocks desktop access (mobile only)
@@ -59,7 +59,7 @@
 │   ├── InboxPage.tsx         Chat list
 │   ├── FriendsPage.tsx       Connected users grid
 │   ├── AlertsPage.tsx        Connection requests & alerts
-│   ├── ProfilePage.tsx       Edit own profile
+│   ├── EditProfile.tsx        Edit own profile (full Tinder-style)
 │   ├── SecretGallery.tsx     Owner paid content management
 │   ├── SecretGalleryView.tsx Viewer paid content access
 │   ├── ExclusiveRoom.tsx     Owner subscription room
@@ -117,7 +117,21 @@ create table public.profiles (
   bank_info jsonb default null,
   verification_docs jsonb default null,
   created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  pronouns text default '',
+  lifestyle jsonb default '{}',
+  job_title text default '',
+  company text default '',
+  education text default '',
+  latitude double precision default null,
+  longitude double precision default null,
+  show_me text default 'Everyone',
+  age_min integer default 18,
+  age_max integer default 50,
+  max_distance integer default 50,
+  show_age boolean default true,
+  show_distance boolean default true,
+  show_orientation boolean default true
 );
 ```
 
@@ -258,7 +272,7 @@ type View = 'landing' | 'login' | 'signup' | 'forgotPassword'
 | inbox | InboxPage | Authenticated |
 | friends | FriendsPage | Authenticated |
 | notifications | AlertsPage | Authenticated |
-| profile | ProfilePage | Authenticated |
+| profile | EditProfile | Authenticated |
 | secretGallery | SecretGallery | Authenticated |
 | secretGalleryView | SecretGalleryView | Authenticated |
 | exclusiveRoom | ExclusiveRoom | Authenticated |
@@ -393,34 +407,55 @@ const linkedProfiles = connections
 
 ---
 
-## 10. Profile Management
+## 10. Profile Management (Edit Profile)
 
-### Profile Page Features
-- Photo management (max 10 photos per profile, real Supabase Storage upload)
-- Left/right arrow navigation to browse through all photos
-- Photo pagination dots at top of image viewer
-- Scrollable thumbnail strip below photo viewer for quick navigation
-- Three-dot menu on photo with options:
-  - **Set as first photo** — move current photo to position 1
-  - **Move left / Move right** — reorder photo by one position
-  - **Delete photo** — with confirmation dialog (minimum 1 photo required)
-- All photo changes (upload, delete, reorder) persist to Supabase DB in real time
-- DB fields updated: `images text[]` (full array) and `image_url text` (first photo)
-- Upload validation: JPG/PNG/WEBP only, max 10MB, max 10 photos
-- Loading/success/error overlay for all async photo operations
-- Edit: username, location, bio
-- Location search via OpenStreetMap Nominatim
-- Quick links: Secret Gallery, Exclusive Room
-- Pro upgrade button (if not Pro)
-- "Save changes" with confirmation modal (persists to Supabase DB via `updateUserProfile`)
+### Component: `EditProfile.tsx` (replaces old ProfilePage.tsx)
+Tinder-inspired full edit profile page with 13 sections.
+
+### Structure (Top → Bottom)
+1. **Header** — sticky top bar with "Edit profile" title + gradient Save button
+2. **Photo Manager** — upload/delete/reorder up to 9 photos with real Supabase Storage
+   - Aspect 3:4 photo viewer with pagination dots
+   - Left/right navigation arrows
+   - Three-dot menu: set as main, move left/right, delete (with confirmation modal)
+   - Thumbnail grid (5 columns) with active indicator + dashed upload button
+   - All changes persist to DB in real time (images[] + image_url)
+3. **Bio** — textarea (max 500 chars) with character counter
+4. **Basic Info** — name, username, DOB (readonly), age (readonly), gender pills, orientation pills, pronouns pills
+5. **Interests** — multi-select chip grid (38 options, max 15 selections)
+6. **Lifestyle** — drinking, smoking, exercise, pets, diet — each with pill selectors
+7. **Work & Education** — job title, company, education text inputs
+8. **Relationship Goals** — single-select pills (5 options)
+9. **Location Settings** — search input with Nominatim autocomplete + GPS auto-detect button
+10. **Discovery Settings** — show me selector, age range dual slider, distance slider
+11. **Verification** — status badge + verify button (links to verification page)
+12. **Privacy (Visibility Controls)** — toggle switches for show age, distance, orientation
+13. **Account Actions** — nav links (blocked users, bank account, earnings) + logout + delete account
+
+### Database Fields Used
+- Basic: full_name, username, bio, gender, orientation, pronouns, relationship_goal
+- Photos: images text[], image_url text
+- Interests: interests text[]
+- Lifestyle: lifestyle jsonb {drinking, smoking, workout, pets, diet}
+- Work: job_title, company, education, occupation
+- Location: location text, latitude float, longitude float
+- Discovery: show_me text, age_min int, age_max int, max_distance int
+- Privacy: show_age bool, show_distance bool, show_orientation bool
+
+### UI Design
+- Background: gradient from light pink to white
+- Cards: white rounded-2xl with subtle shadow and border
+- Active selections: gradient from #FD267A to #FF6036
+- Inputs: gray-50 background, rounded-xl, focus border #FD267A
+- Toggle switches: custom gradient toggle (not native)
+- Toast notifications: fixed top-center with success/error/loading states
+- Modals: backdrop blur with rounded-3xl white cards
 
 ### Navigation From Profile
-- `secretGallery` — manage own paid content
-- `exclusiveRoom` — manage own subscription room
-- `earnings` — view earnings & request withdrawals
-- `bankAccount` — manage bank details
+- `verification` — id verification page
 - `blockedUsers` — manage blocked users
-- `verification` — id verification (not currently active)
+- `bankAccount` — manage bank details
+- `earnings` — view earnings & request withdrawals
 
 ---
 

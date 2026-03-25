@@ -12,7 +12,7 @@ import ForgotPasswordFlow from './components/ForgotPasswordFlow';
 import UserDetails from './components/UserDetails';
 import FriendsPage from './components/FriendsPage';
 import AlertsPage from './components/AlertsPage';
-import ProfilePage from './components/ProfilePage';
+import EditProfile from './components/EditProfile';
 import SecretGallery from './components/SecretGallery';
 import SecretGalleryView from './components/SecretGalleryView';
 import ExclusiveRoomPage from './components/ExclusiveRoom';
@@ -250,7 +250,7 @@ const App: React.FC = () => {
       );
       case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} messages={messages.filter(m => (m.senderId === currentUser.id && m.receiverId === selectedProfile.id) || (m.senderId === selectedProfile.id && m.receiverId === currentUser.id))} onSendMessage={(msg) => setMessages(prev => [...prev, { ...msg, id: `msg-${Date.now()}`, timestamp: Date.now() }])} currentUserId={currentUser.id} />;
       case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} messages={messages} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => {}} isPro={isPro} onGetPro={handlePurchasePro} />;
-      case 'profile': return currentUser && <ProfilePage userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} isPro={isPro} onGetPro={handlePurchasePro} />;
+      case 'profile': return currentUser && <EditProfile userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} onLogout={handleLogout} />;
       case 'earnings': return currentUser && <EarningsPage onBack={() => setView('profile')} earnings={earnings} onRequestWithdrawal={handleRequestWithdrawal} pendingWithdrawals={withdrawals} userProfile={currentUser} />;
       case 'bankAccount': return <BankAccountPage onBack={() => setView('profile')} />;
       case 'blockedUsers': return <BlockedUsersPage blockedIds={blockedIds} onUnblock={(id) => setBlockedIds(prev => prev.filter(bid => bid !== id))} onBack={() => setView('profile')} allUsers={allUsers} />;

@@ -27,3 +27,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+fix-rls.mjs
+fix-rls.sql
+fix-user.mjs
+test-login.mjs

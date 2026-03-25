@@ -52,34 +52,33 @@ create policy "Users can update own profile"
   using (auth.uid() = id);
 
 -- Admins can view ALL profiles (including blocked)
+-- Uses security definer function to avoid RLS infinite recursion
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'admin'
+  );
+$$;
+
 create policy "Admins can view all profiles"
   on public.profiles for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Admins can update ANY profile (for verify, block, pro toggle)
 create policy "Admins can update any profile"
   on public.profiles for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Admins can delete profiles
 create policy "Admins can delete profiles"
   on public.profiles for delete
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- 3. AUTO-UPDATE `updated_at` TRIGGER
 create or replace function public.handle_updated_at()

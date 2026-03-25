@@ -396,13 +396,23 @@ const linkedProfiles = connections
 ## 10. Profile Management
 
 ### Profile Page Features
-- Image carousel (swipe through all photos)
-- Upload new photos (JPG/PNG/WEBP, max 10MB)
+- Photo management (max 10 photos per profile, real Supabase Storage upload)
+- Left/right arrow navigation to browse through all photos
+- Photo pagination dots at top of image viewer
+- Scrollable thumbnail strip below photo viewer for quick navigation
+- Three-dot menu on photo with options:
+  - **Set as first photo** — move current photo to position 1
+  - **Move left / Move right** — reorder photo by one position
+  - **Delete photo** — with confirmation dialog (minimum 1 photo required)
+- All photo changes (upload, delete, reorder) persist to Supabase DB in real time
+- DB fields updated: `images text[]` (full array) and `image_url text` (first photo)
+- Upload validation: JPG/PNG/WEBP only, max 10MB, max 10 photos
+- Loading/success/error overlay for all async photo operations
 - Edit: username, location, bio
 - Location search via OpenStreetMap Nominatim
 - Quick links: Secret Gallery, Exclusive Room
 - Pro upgrade button (if not Pro)
-- "Apply Changes" with confirmation modal
+- "Save changes" with confirmation modal (persists to Supabase DB via `updateUserProfile`)
 
 ### Navigation From Profile
 - `secretGallery` — manage own paid content

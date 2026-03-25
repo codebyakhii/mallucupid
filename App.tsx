@@ -54,7 +54,6 @@ const App: React.FC = () => {
   const handleProfileUpdate = (profile: Profile) => {
     setCurrentUser(profile);
     setAllUsers(prev => prev.map(u => u.id === profile.id ? profile : u));
-    alert('Profile saved');
   };
 
   // ─── SESSION RESTORATION ON MOUNT ──────────────────────────

@@ -139,11 +139,19 @@ function mapDbToProfile(row: any): Profile {
 }
 
 // ─── FORGOT PASSWORD ───────────────────────────────────────────
-export async function sendPasswordResetEmail(email: string) {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin,
+export async function sendPasswordResetOtp(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) throw new Error(error.message);
+}
+
+export async function verifyPasswordResetOtp(email: string, token: string) {
+  const { data, error } = await supabase.auth.verifyOtp({
+    email,
+    token,
+    type: 'recovery',
   });
   if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function updatePassword(newPassword: string) {

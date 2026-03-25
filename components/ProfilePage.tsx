@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Profile } from '../types';
-import { KERALA_LOCATIONS } from '../constants';
+import { searchPlaces } from '../lib/location';
 
 interface ProfilePageProps {
   userProfile: Profile;
@@ -21,6 +21,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onUpdate, onNavi
   }>({ status: 'idle', progress: 0, message: '' });
   
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [locationResults, setLocationResults] = useState<Array<{ display: string; city: string; state: string; country: string }>>([]);
+  const [showLocResults, setShowLocResults] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -146,11 +148,32 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onUpdate, onNavi
             <input type="text" name="username" value={profile.username} onChange={handleChange} className="w-full bg-white border border-orange-100 rounded-2xl py-4 px-6 font-bold text-sm outline-none" />
           </div>
 
-          <div>
+          <div className="relative">
             <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5 block">Location</label>
-            <select name="location" value={profile.location} onChange={handleChange} className="w-full bg-white border border-orange-100 rounded-2xl py-4 px-6 font-bold text-sm">
-              {KERALA_LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
-            </select>
+            <input 
+              type="text" 
+              value={profile.location} 
+              onChange={async (e) => {
+                setProfile({...profile, location: e.target.value});
+                if (e.target.value.length >= 2) {
+                  const results = await searchPlaces(e.target.value);
+                  setLocationResults(results);
+                  setShowLocResults(true);
+                } else { setShowLocResults(false); }
+              }}
+              className="w-full bg-white border border-orange-100 rounded-2xl py-4 px-6 font-bold text-sm outline-none" 
+              placeholder="Search your city..."
+            />
+            {showLocResults && locationResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-orange-100 rounded-2xl z-50 shadow-xl max-h-48 overflow-y-auto">
+                {locationResults.map((loc, i) => (
+                  <button key={i} type="button" onClick={() => { setProfile({...profile, location: loc.display}); setShowLocResults(false); }}
+                    className="w-full px-6 py-3 text-left text-sm font-bold hover:bg-orange-50 border-b border-orange-50 last:border-0">
+                    {loc.display}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { KERALA_LOCATIONS } from '../constants';
 import { signUpWithEmail, verifyOtp, resendSignupOtp, createUserProfile, uploadProfileImage } from '../lib/auth';
+import { reverseGeocode, searchPlaces, getCurrentPosition, fetchCountries } from '../lib/location';
 
 interface SignupPageProps {
   onBack: () => void;
@@ -37,6 +37,10 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
   const [otpTimer, setOtpTimer] = useState(30);
   const [locationQuery, setLocationQuery] = useState('');
   const [showLocationResults, setShowLocationResults] = useState(false);
+  const [locationResults, setLocationResults] = useState<Array<{ display: string; city: string; state: string; country: string }>>([]);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [countries, setCountries] = useState<Array<{ id: number; name: string; code: string }>>([]);
+  const [showCountryFallback, setShowCountryFallback] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   
   const [uploadState, setUploadState] = useState<{
@@ -133,23 +137,46 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
     }
   };
 
-  const filteredLocations = KERALA_LOCATIONS.filter(loc => 
-    loc.toLowerCase().includes(locationQuery.toLowerCase())
-  );
+  // Debounced location search via OpenStreetMap Nominatim
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const handleLocationSearch = (query: string) => {
+    setLocationQuery(query);
+    setShowLocationResults(true);
+    setFormData(prev => ({ ...prev, location: '' }));
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (query.length < 2) { setLocationResults([]); return; }
+    searchTimeoutRef.current = setTimeout(async () => {
+      const results = await searchPlaces(query);
+      setLocationResults(results);
+    }, 400);
+  };
+
+  // Auto-detect location via GPS + reverse geocode
+  const handleDetectLocation = async () => {
+    setIsDetectingLocation(true);
+    setErrors(prev => ({ ...prev, location: '' }));
+    try {
+      const pos = await getCurrentPosition();
+      const geo = await reverseGeocode(pos.lat, pos.lon);
+      setFormData(prev => ({ ...prev, location: geo.display }));
+      setLocationQuery(geo.display);
+      setShowLocationResults(false);
+    } catch {
+      setErrors(prev => ({ ...prev, location: 'Could not detect location. Search or select country below.' }));
+      setShowCountryFallback(true);
+      if (countries.length === 0) {
+        fetchCountries().then(setCountries).catch(() => {});
+      }
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  };
 
   const handleStep3Next = () => {
     const newErrors: Record<string, string> = {};
     
-    // If the user has typed something that exactly matches a location, accept it even if they didn't click
-    let finalLocation = formData.location;
-    const typedMatch = KERALA_LOCATIONS.find(l => l.toLowerCase() === locationQuery.toLowerCase());
-    if (typedMatch) {
-      finalLocation = typedMatch;
-      setFormData(prev => ({ ...prev, location: typedMatch }));
-    }
-
-    if (!finalLocation) {
-      newErrors.location = 'Please select a valid Kerala city from the list';
+    if (!formData.location) {
+      newErrors.location = 'Please set your location';
     }
     
     if (formData.bio.trim().length < 10) {
@@ -360,28 +387,61 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
               <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Tell us more</h2>
               <div className="relative">
                 <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Location</label>
-                <input 
-                  type="text" 
-                  value={locationQuery || formData.location} 
-                  onChange={e => { setLocationQuery(e.target.value); setShowLocationResults(true); setFormData(prev => ({ ...prev, location: '' })); }}
-                  onFocus={() => setShowLocationResults(true)}
-                  className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-6 text-white text-sm outline-none focus:border-white/50" 
-                  placeholder="Type your city..." 
-                />
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={locationQuery || formData.location} 
+                    onChange={e => handleLocationSearch(e.target.value)}
+                    onFocus={() => { if (locationResults.length > 0) setShowLocationResults(true); }}
+                    className="flex-1 bg-white/10 border border-white/20 rounded-2xl py-4 px-6 text-white text-sm outline-none focus:border-white/50" 
+                    placeholder="Search city or tap detect..." 
+                  />
+                  <button
+                    type="button"
+                    onClick={handleDetectLocation}
+                    disabled={isDetectingLocation}
+                    className="bg-white/10 border border-white/20 rounded-2xl px-4 flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50"
+                    title="Detect my location"
+                  >
+                    {isDetectingLocation ? (
+                      <svg className="w-5 h-5 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    )}
+                  </button>
+                </div>
                 {errors.location && <p className="text-red-400 text-[9px] font-black uppercase mt-1 ml-2">{errors.location}</p>}
                 
-                {showLocationResults && locationQuery && filteredLocations.length > 0 && (
+                {showLocationResults && locationQuery && locationResults.length > 0 && (
                   <div className="absolute left-0 right-0 top-full mt-2 bg-black/80 backdrop-blur-xl border border-white/20 rounded-2xl z-[60] overflow-hidden shadow-2xl max-h-48 overflow-y-auto">
-                    {filteredLocations.map(loc => (
+                    {locationResults.map((loc, i) => (
                       <button 
-                        key={loc}
+                        key={i}
                         type="button"
-                        onClick={() => { setFormData({...formData, location: loc}); setLocationQuery(loc); setShowLocationResults(false); }}
+                        onClick={() => { setFormData({...formData, location: loc.display}); setLocationQuery(loc.display); setShowLocationResults(false); }}
                         className="w-full px-6 py-4 text-left text-white text-xs font-bold hover:bg-white/10 border-b border-white/5 last:border-0 active:bg-white/20"
                       >
-                        {loc}
+                        <span className="text-white/90">{loc.city || loc.display}</span>
+                        {loc.state && <span className="text-white/50">, {loc.state}</span>}
+                        {loc.country && <span className="text-white/40">, {loc.country}</span>}
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {showCountryFallback && (
+                  <div className="mt-3">
+                    <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Or Select Country</label>
+                    <select 
+                      value="" 
+                      onChange={e => { setFormData({...formData, location: e.target.value}); setLocationQuery(e.target.value); setShowCountryFallback(false); }}
+                      className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-4 text-white text-xs font-bold outline-none"
+                    >
+                      <option value="" className="bg-gray-800">Select a country...</option>
+                      {countries.map(c => (
+                        <option key={c.code} value={c.name} className="bg-gray-800">{c.name}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
               </div>
@@ -451,7 +511,7 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
 
           {step === 4 && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Photos & Rules</h2>
+              <h2 className="text-lg font-black text-white uppercase tracking-tighter">Add Your Photos</h2>
               
               <div className="relative">
                 <div className="grid grid-cols-3 gap-3">

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { signUpWithEmail, verifyOtp, resendSignupOtp, createUserProfile, uploadProfileImage } from '../lib/auth';
+import { signUpWithEmail, verifyOtp, resendSignupOtp, createUserProfile, uploadProfileImage, checkUsernameAvailable } from '../lib/auth';
 import { reverseGeocode, searchPlaces, getCurrentPosition, fetchCountries } from '../lib/location';
 
 interface SignupPageProps {
@@ -54,18 +54,61 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
   // STEP 1: Validate inputs & create Supabase auth user
   const handleStep1Next = async () => {
     const newErrors: Record<string, string> = {};
-    if (!formData.fullName) newErrors.fullName = 'Full name required';
-    if (!formData.username) newErrors.username = 'Username required';
-    if (!formData.email) newErrors.email = 'Email required';
-    if (!formData.password) newErrors.password = 'Password required';
-    if (formData.password && formData.password.length < 6) newErrors.password = 'Minimum 6 characters';
-    
-    if (formData.dob) {
-      const birthDate = new Date(formData.dob);
-      const age = new Date().getFullYear() - birthDate.getFullYear();
-      if (age < 18) newErrors.dob = 'Must be 18+ to join';
+
+    // Name validation: required
+    if (!formData.fullName.trim()) {
+      newErrors.fullName = 'Full name required';
+    }
+
+    // Username validation: lowercase, alphanum + special, 6-20 chars
+    const uname = formData.username;
+    if (!uname) {
+      newErrors.username = 'Username required';
+    } else if (uname.length < 6) {
+      newErrors.username = 'Minimum 6 characters';
+    } else if (uname.length > 20) {
+      newErrors.username = 'Maximum 20 characters';
+    } else if (uname !== uname.toLowerCase()) {
+      newErrors.username = 'Only lowercase letters allowed';
+    } else if (!/^[a-z0-9._@#$&!-]+$/.test(uname)) {
+      newErrors.username = 'Only lowercase letters, numbers & special chars allowed';
+    }
+
+    // DOB validation: required, must be 18+
+    if (!formData.dob) {
+      newErrors.dob = 'Date of birth required';
     } else {
-      newErrors.dob = 'DOB required';
+      const birth = new Date(formData.dob);
+      const today = new Date();
+      let age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+      if (age < 18) newErrors.dob = 'You must be 18 or older to join';
+    }
+
+    // Email validation
+    if (!formData.email) {
+      newErrors.email = 'Email required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Enter a valid email address';
+    }
+
+    // Password validation: 8-25, upper, lower, num, special
+    const pwd = formData.password;
+    if (!pwd) {
+      newErrors.password = 'Password required';
+    } else if (pwd.length < 8) {
+      newErrors.password = 'Minimum 8 characters';
+    } else if (pwd.length > 25) {
+      newErrors.password = 'Maximum 25 characters';
+    } else if (!/[A-Z]/.test(pwd)) {
+      newErrors.password = 'Must contain one uppercase letter';
+    } else if (!/[a-z]/.test(pwd)) {
+      newErrors.password = 'Must contain one lowercase letter';
+    } else if (!/[0-9]/.test(pwd)) {
+      newErrors.password = 'Must contain one number';
+    } else if (!/[^A-Za-z0-9]/.test(pwd)) {
+      newErrors.password = 'Must contain one special character';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -73,8 +116,22 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
       return;
     }
 
+    // Format name: first letter capital, rest lowercase per word
+    const formattedName = formData.fullName.trim().split(/\s+/)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+    setFormData(prev => ({ ...prev, fullName: formattedName }));
+
     setIsVerifying(true);
     try {
+      // Check username uniqueness
+      const available = await checkUsernameAvailable(formData.username);
+      if (!available) {
+        setErrors({ username: 'Username already taken. Try another.' });
+        setIsVerifying(false);
+        return;
+      }
+
       const result = await signUpWithEmail(formData.email, formData.password);
       if (result.user) {
         setAuthUserId(result.user.id);
@@ -189,7 +246,8 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
     }
 
     setErrors({});
-    setStep(4);
+    setIsVerifying(true);
+    setTimeout(() => { setStep(4); setIsVerifying(false); }, 400);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -307,39 +365,46 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
         </div>
       </div>
 
-      <div className="relative z-10 flex-1 overflow-y-auto px-8 pb-20 pt-4">
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-[3rem] shadow-2xl">
+      <div className="relative z-10 flex-1 overflow-y-auto px-4 sm:px-8 pb-20 pt-4">
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-5 sm:p-8 rounded-[2rem] shadow-2xl max-w-md mx-auto">
           
           {step === 1 && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <h2 className="text-2xl font-black text-white uppercase tracking-tighter mb-6">Create Account</h2>
+            <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <h2 className="text-xl font-black text-white uppercase tracking-tighter mb-4">Create Account</h2>
               <div>
                 <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Full Name</label>
-                <input type="text" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-6 text-white text-sm outline-none focus:border-white/50" placeholder="John Doe" />
+                <input type="text" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-3.5 px-5 text-white text-sm outline-none focus:border-white/50" placeholder="John Doe" />
                 {errors.fullName && <p className="text-red-400 text-[9px] font-black uppercase mt-1 ml-2">{errors.fullName}</p>}
               </div>
               <div>
-                <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Username</label>
-                <input type="text" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-6 text-white text-sm outline-none focus:border-white/50" placeholder="@username" />
+                <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Username <span className="text-white/30">(6-20 chars)</span></label>
+                <input type="text" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value.toLowerCase().slice(0, 20)})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-3.5 px-5 text-white text-sm outline-none focus:border-white/50" placeholder="username123" maxLength={20} />
                 {errors.username && <p className="text-red-400 text-[9px] font-black uppercase mt-1 ml-2">{errors.username}</p>}
               </div>
               <div>
                 <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Date of Birth</label>
-                <input type="date" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-6 text-white text-sm outline-none focus:border-white/50" />
+                <input type="date" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-3.5 px-5 text-white text-sm outline-none focus:border-white/50" />
                 {errors.dob && <p className="text-red-400 text-[9px] font-black uppercase mt-1 ml-2">{errors.dob}</p>}
               </div>
               <div>
                 <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Email</label>
-                <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-6 text-white text-sm outline-none focus:border-white/50" placeholder="example@email.com" />
+                <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value.trim()})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-3.5 px-5 text-white text-sm outline-none focus:border-white/50" placeholder="example@email.com" />
                 {errors.email && <p className="text-red-400 text-[9px] font-black uppercase mt-1 ml-2">{errors.email}</p>}
               </div>
               <div>
-                <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Password</label>
-                <input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-6 text-white text-sm outline-none focus:border-white/50" placeholder="••••••••" />
+                <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Password <span className="text-white/30">(8-25, A-z, 0-9, @#$)</span></label>
+                <input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value.slice(0, 25)})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-3.5 px-5 text-white text-sm outline-none focus:border-white/50" placeholder="••••••••" maxLength={25} />
                 {errors.password && <p className="text-red-400 text-[9px] font-black uppercase mt-1 ml-2">{errors.password}</p>}
               </div>
               {errors.general && <p className="text-red-400 text-[10px] font-black uppercase text-center bg-red-500/10 py-3 px-4 rounded-lg">{errors.general}</p>}
-              <button onClick={handleStep1Next} className="w-full py-5 bg-[#006400] text-white rounded-2xl font-black uppercase tracking-widest text-xs mt-6 active:scale-95 transition-transform shadow-xl">Next Step</button>
+              <button onClick={handleStep1Next} disabled={isVerifying} className="w-full py-4 bg-[#006400] text-white rounded-2xl font-black uppercase tracking-widest text-xs mt-4 active:scale-95 transition-transform shadow-xl disabled:opacity-50 disabled:scale-100">
+                {isVerifying ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Checking...
+                  </span>
+                ) : 'Next Step'}
+              </button>
             </div>
           )}
 
@@ -501,10 +566,16 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
               </div>
               <button 
                 type="button"
-                onClick={handleStep3Next} 
-                className="w-full py-5 bg-[#006400] text-white rounded-2xl font-black uppercase tracking-widest text-xs mt-4 active:scale-95 transition-transform shadow-xl"
+                onClick={handleStep3Next}
+                disabled={isVerifying}
+                className="w-full py-4 bg-[#006400] text-white rounded-2xl font-black uppercase tracking-widest text-xs mt-4 active:scale-95 transition-transform shadow-xl disabled:opacity-50 disabled:scale-100"
               >
-                Next Step
+                {isVerifying ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Loading...
+                  </span>
+                ) : 'Next Step'}
               </button>
             </div>
           )}
@@ -584,9 +655,14 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
               <button 
                 onClick={handleSubmit} 
                 disabled={uploadState.isUploading}
-                className={`w-full py-5 bg-[#006400] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl transition-all ${uploadState.isUploading ? 'opacity-30' : 'active:scale-95'}`}
+                className={`w-full py-4 bg-[#006400] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl transition-all disabled:opacity-50 disabled:scale-100 ${uploadState.isUploading ? '' : 'active:scale-95'}`}
               >
-                {uploadState.isUploading ? 'Wait for uploads...' : 'Create Account'}
+                {uploadState.isUploading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Creating Account...
+                  </span>
+                ) : 'Create Account'}
               </button>
             </div>
           )}
@@ -610,7 +686,7 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
               <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>
            </div>
            <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-4">Account Created!</h2>
-           <p className="text-white/70 text-sm font-bold uppercase tracking-widest">Welcome to the family. Redirecting to login...</p>
+           <p className="text-white/70 text-sm font-bold uppercase tracking-widest">Welcome to MalluCupid. Taking you in...</p>
         </div>
       )}
     </div>

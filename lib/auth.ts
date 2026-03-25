@@ -85,6 +85,16 @@ export async function loginWithEmail(email: string, password: string) {
   return data;
 }
 
+// ─── CHECK USERNAME UNIQUENESS ─────────────────────────────────
+export async function checkUsernameAvailable(username: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('username', username)
+    .maybeSingle();
+  return !data;
+}
+
 // ─── FETCH PROFILE ─────────────────────────────────────────────
 export async function fetchUserProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase

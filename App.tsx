@@ -211,7 +211,22 @@ const App: React.FC = () => {
         </div>
       );
       case 'login': return <LoginPage onBack={() => setView('landing')} onLogin={handleLogin} onGoToSignup={() => setView('signup')} onForgotPassword={() => setView('forgotPassword')} />;
-      case 'signup': return <SignupPage onBack={() => setView('login')} onSuccess={() => setView('login')} />;
+      case 'signup': return <SignupPage onBack={() => setView('login')} onSuccess={async () => {
+        try {
+          const session = await getCurrentSession();
+          if (session?.user) {
+            const profile = await fetchUserProfile(session.user.id);
+            if (profile) {
+              setCurrentUser(profile);
+              const users = await fetchAllProfiles();
+              setAllUsers(users);
+              setView('discover');
+              return;
+            }
+          }
+        } catch {}
+        setView('login');
+      }} />;
       case 'forgotPassword': return <ForgotPasswordFlow onBack={() => setView('login')} onSuccess={() => setView('login')} />;
       case 'adminDashboard': return (
         <AdminDashboard users={allUsers} withdrawalRequests={withdrawals} reports={reports} proConfig={proConfig}

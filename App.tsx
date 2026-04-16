@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Profile, ConnectionRequest, PurchaseRecord, SubscriptionRecord, Notification, Message, Earning, WithdrawalRequest, UserReport, ProConfig } from './types';
+import React, { useState, useEffect } from 'react';
+import { View, Profile, PurchaseRecord, SubscriptionRecord, Earning, WithdrawalRequest, ProConfig } from './types';
 import { LANDING_BG } from './constants';
 import { supabase } from './lib/supabase';
 import { loginWithEmail, fetchUserProfile, fetchAllProfiles, signOut, getCurrentSession } from './lib/auth';
@@ -35,16 +35,14 @@ const App: React.FC = () => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   
   const [proConfig, setProConfig] = useState<ProConfig>({ price: 99, duration: 30 });
-  const [connections, setConnections] = useState<ConnectionRequest[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [subscriptions, setSubscriptions] = useState<SubscriptionRecord[]>([]);
   const [blockedIds, setBlockedIds] = useState<string[]>([]);
+  const [activeRequests, setActiveRequests] = useState<string[]>([]);
+  const [linkedProfiles, setLinkedProfiles] = useState<Profile[]>([]);
   
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
-  const [reports, setReports] = useState<UserReport[]>([]);
 
   const isPro = useMemo(() => {
     if (!currentUser?.proExpiry) return false;
@@ -54,6 +52,31 @@ const App: React.FC = () => {
   const handleProfileUpdate = (profile: Profile) => {
     setCurrentUser(profile);
     setAllUsers(prev => prev.map(u => u.id === profile.id ? profile : u));
+  };
+
+  const refreshConnectionData = async (userId?: string) => {
+    const uid = userId || currentUser?.id;
+    if (!uid) return;
+
+    // Fetch blocked IDs
+    const { data: blocks } = await supabase.from('blocked_users').select('blocked_id').eq('blocker_id', uid);
+    const bIds = (blocks || []).map(b => b.blocked_id);
+    setBlockedIds(bIds);
+
+    // Fetch active (pending) outgoing requests
+    const { data: pending } = await supabase.from('connection_requests').select('to_id').eq('from_id', uid).eq('status', 'pending');
+    setActiveRequests((pending || []).map(r => r.to_id));
+
+    // Fetch linked (accepted) profiles
+    const { data: accepted } = await supabase.from('connection_requests').select('from_id, to_id').eq('status', 'accepted')
+      .or(`from_id.eq.${uid},to_id.eq.${uid}`);
+    if (accepted) {
+      const friendIds = accepted.map(c => c.from_id === uid ? c.to_id : c.from_id);
+      const blockedSet = new Set(bIds);
+      setLinkedProfiles(allUsers.filter(p => friendIds.includes(p.id) && !blockedSet.has(p.id)));
+    } else {
+      setLinkedProfiles([]);
+    }
   };
 
   // ─── SESSION RESTORATION ON MOUNT ──────────────────────────
@@ -67,6 +90,7 @@ const App: React.FC = () => {
             setCurrentUser(profile);
             const users = await fetchAllProfiles();
             setAllUsers(users);
+            await refreshConnectionData(session.user.id);
             setView(profile.role === 'admin' ? 'adminDashboard' : 'discover');
           }
         }
@@ -123,11 +147,24 @@ const App: React.FC = () => {
     setWithdrawals(prev => [...prev, { id: `wd-${Date.now()}`, userId: currentUser.id, username: currentUser.username, amount, status: 'pending', timestamp: Date.now() }]);
   };
 
-  const linkedProfiles = useMemo(() => {
-    if (!currentUser) return [];
-    const friendIds = connections.filter(c => c.status === 'accepted').map(c => c.fromId === currentUser.id ? c.toId : c.fromId);
-    return allUsers.filter(p => friendIds.includes(p.id) && !blockedIds.includes(p.id) && p.status !== 'blocked');
-  }, [connections, currentUser, blockedIds, allUsers]);
+  const handleLike = async (profile: Profile) => {
+    if (!currentUser) return;
+    try {
+      const { error } = await supabase.from('connection_requests').insert({
+        from_id: currentUser.id,
+        to_id: profile.id,
+        status: 'pending',
+      });
+      if (error) { console.error(error); return; }
+      await supabase.from('notifications').insert({
+        user_id: profile.id,
+        type: 'request',
+        from_user_id: currentUser.id,
+        text: 'sent you a connection request',
+      });
+      refreshConnectionData();
+    } catch (err) { console.error(err); }
+  };
 
   const handleLogin = async (credential: string, password: string) => {
     try {
@@ -142,6 +179,7 @@ const App: React.FC = () => {
       setCurrentUser(profile);
       const users = await fetchAllProfiles();
       setAllUsers(users);
+      await refreshConnectionData(authData.user.id);
       setView(profile.role === 'admin' ? 'adminDashboard' : 'discover');
       return { success: true };
     } catch (error: any) {
@@ -228,32 +266,28 @@ const App: React.FC = () => {
       }} />;
       case 'forgotPassword': return <ForgotPasswordFlow onBack={() => setView('login')} onSuccess={() => setView('login')} />;
       case 'adminDashboard': return (
-        <AdminDashboard users={allUsers} withdrawalRequests={withdrawals} reports={reports} proConfig={proConfig}
+        <AdminDashboard users={allUsers} withdrawalRequests={withdrawals} reports={[]} proConfig={proConfig}
           onUpdateProConfig={handleUpdateProConfig} onManualProToggle={handleManualProToggle}
           onApproveWithdrawal={handleAdminApproveWithdrawal} onHoldWithdrawal={handleAdminHoldWithdrawal}
           onRejectWithdrawal={handleAdminRejectWithdrawal} onVerifyUser={(id) => handleVerifyUser(id, true)}
           onUnverifyUser={(id) => handleVerifyUser(id, false)} onBlockUser={(id) => handleBlockUser(id, true)}
           onDeleteUser={handleDeleteUser} onBack={() => setView('landing')} onLogout={handleLogout} />
       );
-      case 'discover': return currentUser && <Discover users={allUsers} onLike={(p) => setConnections(prev => [...prev, { id: `req-${Date.now()}`, fromId: currentUser.id, toId: p.id, status: 'pending', timestamp: Date.now() }])} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={connections.filter(c => c.fromId === currentUser.id && c.status === 'pending').map(c => c.toId)} />;
+      case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} />;
       case 'userDetails': return selectedProfile && currentUser && (
-        <UserDetails profile={allUsers.find(u => u.id === selectedProfile.id) || selectedProfile} onBack={() => setView('discover')}
-          onUnfriend={(pid) => setConnections(prev => prev.filter(c => !((c.fromId === currentUser.id && c.toId === pid) || (c.fromId === pid && c.toId === currentUser.id))))}
-          onBlock={(pid) => setBlockedIds(prev => [...prev, pid])}
-          onReport={(id, reason) => setReports(prev => [...prev, { id: `rep-${Date.now()}`, reporterId: currentUser.id, targetId: id, reason, timestamp: Date.now() }])}
+        <UserDetails profile={allUsers.find(u => u.id === selectedProfile.id) || selectedProfile} currentUserId={currentUser.id} onBack={() => setView('discover')}
           onOpenSecretGallery={() => setView('secretGalleryView')} onOpenExclusiveRoom={() => setView('exclusiveRoomView')}
           onChat={() => setView('chat')}
-          onConnect={(pid) => setConnections(prev => [...prev, { id: `req-${Date.now()}`, fromId: currentUser.id, toId: pid, status: 'pending', timestamp: Date.now() }])}
-          isLinked={linkedProfiles.some(p => p.id === selectedProfile.id)}
-          isPending={connections.some(c => c.fromId === currentUser.id && c.toId === selectedProfile.id && c.status === 'pending')}
-          isPro={isPro} onGetPro={handlePurchasePro} />
+          isPro={isPro} onGetPro={handlePurchasePro} onConnectionChange={() => refreshConnectionData()} />
       );
       case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} />;
       case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => {}} isPro={isPro} onGetPro={handlePurchasePro} />;
+      case 'friends': return currentUser && <FriendsPage currentUserId={currentUser.id} allUsers={allUsers} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} onConnectionChange={() => refreshConnectionData()} />;
+      case 'notifications': return currentUser && <AlertsPage currentUserId={currentUser.id} allUsers={allUsers} onConnectionAccepted={() => refreshConnectionData()} />;
       case 'profile': return currentUser && <EditProfile userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} onLogout={handleLogout} />;
       case 'earnings': return currentUser && <EarningsPage onBack={() => setView('profile')} earnings={earnings} onRequestWithdrawal={handleRequestWithdrawal} pendingWithdrawals={withdrawals} userProfile={currentUser} />;
       case 'bankAccount': return <BankAccountPage onBack={() => setView('profile')} />;
-      case 'blockedUsers': return <BlockedUsersPage blockedIds={blockedIds} onUnblock={(id) => setBlockedIds(prev => prev.filter(bid => bid !== id))} onBack={() => setView('profile')} allUsers={allUsers} />;
+      case 'blockedUsers': return currentUser && <BlockedUsersPage currentUserId={currentUser.id} onBack={() => setView('profile')} allUsers={allUsers} />;
       case 'secretGallery': return currentUser && <SecretGallery isOwner={true} onBack={() => setView('profile')} targetProfile={currentUser} />;
       case 'exclusiveRoom': return currentUser && <ExclusiveRoomPage onBack={() => setView('profile')} />;
       case 'secretGalleryView': return selectedProfile && <SecretGalleryView targetProfile={selectedProfile} onBack={() => setView('userDetails')} purchases={purchases} onPurchase={(id) => setPurchases(prev => [...prev, { contentId: id, userId: currentUser?.id || '' }])} />;

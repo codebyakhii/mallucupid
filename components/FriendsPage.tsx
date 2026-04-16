@@ -1,17 +1,76 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
 import { Profile } from '../types';
 
 interface FriendsPageProps {
-  linkedProfiles: Profile[];
+  currentUserId: string;
+  allUsers: Profile[];
   onShowDetails: (profile: Profile) => void;
-  onBlock: (profileId: string) => void;
+  onConnectionChange: () => void;
 }
 
-const FriendsPage: React.FC<FriendsPageProps> = ({ linkedProfiles, onShowDetails, onBlock }) => {
+const FriendsPage: React.FC<FriendsPageProps> = ({ currentUserId, allUsers, onShowDetails, onConnectionChange }) => {
+  const [linkedProfiles, setLinkedProfiles] = useState<Profile[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [blockingId, setBlockingId] = useState<string | null>(null);
+
+  const fetchFriends = useCallback(async () => {
+    setLoading(true);
+    // Get accepted connections where current user is either from_id or to_id
+    const { data } = await supabase
+      .from('connection_requests')
+      .select('from_id, to_id')
+      .eq('status', 'accepted')
+      .or(`from_id.eq.${currentUserId},to_id.eq.${currentUserId}`);
+
+    if (data) {
+      const friendIds = data.map(c => c.from_id === currentUserId ? c.to_id : c.from_id);
+      // Filter out blocked users
+      const { data: blocks } = await supabase
+        .from('blocked_users')
+        .select('blocked_id')
+        .eq('blocker_id', currentUserId);
+      const blockedSet = new Set((blocks || []).map(b => b.blocked_id));
+      setLinkedProfiles(allUsers.filter(p => friendIds.includes(p.id) && !blockedSet.has(p.id)));
+    } else {
+      setLinkedProfiles([]);
+    }
+    setLoading(false);
+  }, [currentUserId, allUsers]);
+
+  useEffect(() => { fetchFriends(); }, [fetchFriends]);
+
+  // Real-time subscription for connection changes
+  useEffect(() => {
+    const chan = supabase.channel('friends_connections')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => fetchFriends())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users' }, () => fetchFriends())
+      .subscribe();
+    return () => { supabase.removeChannel(chan); };
+  }, [fetchFriends]);
+
+  const handleBlock = async (profileId: string) => {
+    setBlockingId(profileId);
+    try {
+      await supabase.from('blocked_users').insert({ blocker_id: currentUserId, blocked_id: profileId });
+      await supabase.from('connection_requests').delete()
+        .or(`and(from_id.eq.${currentUserId},to_id.eq.${profileId}),and(from_id.eq.${profileId},to_id.eq.${currentUserId})`);
+      setSelectedFriend(null);
+      onConnectionChange();
+      fetchFriends();
+    } catch {}
+    setBlockingId(null);
+  };
 
   const toTitleCase = (str: string) => str.toLowerCase().replace(/(^|\s)\S/g, L => L.toUpperCase());
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-3 border-[#FF4458] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
     <div className="p-6 h-full overflow-y-auto pb-32 bg-[#fdf8f5]">
@@ -21,7 +80,7 @@ const FriendsPage: React.FC<FriendsPageProps> = ({ linkedProfiles, onShowDetails
           {linkedProfiles.length} Linked
         </span>
       </div>
-      
+
       {linkedProfiles.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-center text-gray-400">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4 text-gray-300">
@@ -35,8 +94,8 @@ const FriendsPage: React.FC<FriendsPageProps> = ({ linkedProfiles, onShowDetails
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {linkedProfiles.map(p => (
-            <div 
-              key={p.id} 
+            <div
+              key={p.id}
               onClick={() => setSelectedFriend(p)}
               className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-lg border-2 border-white active:scale-95 transition-transform cursor-pointer bg-gray-200"
             >
@@ -50,7 +109,6 @@ const FriendsPage: React.FC<FriendsPageProps> = ({ linkedProfiles, onShowDetails
         </div>
       )}
 
-      {/* Management Modal */}
       {selectedFriend && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSelectedFriend(null)}></div>
@@ -65,24 +123,25 @@ const FriendsPage: React.FC<FriendsPageProps> = ({ linkedProfiles, onShowDetails
                   </svg>
                 )}
               </div>
-              <p className="text-[9px] font-bold text-gray-400 tracking-tight">{toTitleCase(selectedFriend.location)} • {toTitleCase(selectedFriend.occupation)}</p>
+              <p className="text-[9px] font-bold text-gray-400 tracking-tight">{toTitleCase(selectedFriend.location)}{selectedFriend.occupation ? ` \u2022 ${toTitleCase(selectedFriend.occupation)}` : ''}</p>
             </div>
-            
+
             <div className="space-y-3">
-              <button 
-                onClick={() => { onShowDetails(selectedFriend); setSelectedFriend(null); }} 
+              <button
+                onClick={() => { onShowDetails(selectedFriend); setSelectedFriend(null); }}
                 className="w-full py-4 bg-orange-50 text-orange-600 rounded-2xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-transform shadow-sm"
               >
-                View Full Profile
+                View full profile
               </button>
-              <button 
-                onClick={() => { onBlock(selectedFriend.id); setSelectedFriend(null); }} 
-                className="w-full py-4 bg-[#8B0000] text-white rounded-2xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-transform shadow-sm"
+              <button
+                onClick={() => handleBlock(selectedFriend.id)}
+                disabled={blockingId === selectedFriend.id}
+                className="w-full py-4 bg-[#8B0000] text-white rounded-2xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-transform shadow-sm flex items-center justify-center"
               >
-                Block Account
+                {blockingId === selectedFriend.id ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Block account'}
               </button>
-              <button 
-                onClick={() => setSelectedFriend(null)} 
+              <button
+                onClick={() => setSelectedFriend(null)}
                 className="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-transform"
               >
                 Close

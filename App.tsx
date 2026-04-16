@@ -129,7 +129,13 @@ const App: React.FC = () => {
                 setView('verifyAuthority');
               }
             } else if (LOGGED_IN_VIEWS.has(urlView)) {
-              setViewRaw(urlView); // don't push state again
+              // Views that require selectedProfile can't be restored on refresh
+              const needsSelectedProfile = new Set<View>(['userDetails', 'chat', 'privateGalleryView']);
+              if (needsSelectedProfile.has(urlView)) {
+                setView('discover');
+              } else {
+                setViewRaw(urlView); // don't push state again
+              }
             } else {
               setView('discover');
             }

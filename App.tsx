@@ -23,11 +23,31 @@ import InboxPage from './components/InboxPage';
 import AdminDashboard from './components/AdminDashboard';
 import BankAccountPage from './components/BankAccountPage';
 
+// ─── URL ↔ VIEW MAPPING ────────────────────────────────────
+const VIEW_TO_PATH: Record<View, string> = {
+  landing: '/', login: '/login', signup: '/signup', forgotPassword: '/forgot-password',
+  discover: '/discover', friends: '/matches', profile: '/profile', chat: '/chat',
+  inbox: '/inbox', userDetails: '/user', notifications: '/alerts',
+  privateGallery: '/gallery', privateGalleryView: '/gallery/view',
+  earnings: '/earnings', verification: '/verification', blockedUsers: '/blocked',
+  adminDashboard: '/admin', bankAccount: '/bank-account', terms: '/terms', privacy: '/privacy',
+};
+const PATH_TO_VIEW: Record<string, View> = Object.fromEntries(
+  Object.entries(VIEW_TO_PATH).map(([v, p]) => [p, v as View])
+) as Record<string, View>;
+const LOGGED_IN_VIEWS = new Set<View>(['discover', 'friends', 'profile', 'chat', 'inbox', 'userDetails', 'notifications', 'privateGallery', 'privateGalleryView', 'earnings', 'verification', 'blockedUsers', 'adminDashboard', 'bankAccount']);
+
+function getViewFromPath(): View {
+  const path = window.location.pathname;
+  return PATH_TO_VIEW[path] || 'landing';
+}
+
 const App: React.FC = () => {
-  const [view, setView] = useState<View>('landing');
+  const [view, setViewRaw] = useState<View>('landing');
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [pageTransition, setPageTransition] = useState(false);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -36,6 +56,18 @@ const App: React.FC = () => {
   const [blockedIds, setBlockedIds] = useState<string[]>([]);
   const [activeRequests, setActiveRequests] = useState<string[]>([]);
   const [linkedProfiles, setLinkedProfiles] = useState<Profile[]>([]);
+  const suppressPopState = React.useRef(false);
+
+  // Wrapped setView that also updates the URL
+  const setView = React.useCallback((newView: View) => {
+    setViewRaw(newView);
+    const path = VIEW_TO_PATH[newView] || '/';
+    if (window.location.pathname !== path) {
+      suppressPopState.current = true;
+      window.history.pushState({ view: newView }, '', path);
+      setTimeout(() => { suppressPopState.current = false; }, 50);
+    }
+  }, []);
 
   const isPro = useMemo(() => {
     if (!currentUser?.proExpiry) return false;
@@ -81,12 +113,25 @@ const App: React.FC = () => {
           const profile = await fetchUserProfile(session.user.id);
           if (profile) {
             setCurrentUser(profile);
-            // Update last_active on session restore
             supabase.from('profiles').update({ last_active: new Date().toISOString() }).eq('id', session.user.id).then();
             const users = await fetchAllProfiles();
             setAllUsers(users);
             await refreshConnectionData(session.user.id);
-            setView(profile.role === 'admin' ? 'adminDashboard' : 'discover');
+            // Restore view from URL if it's a logged-in view, else default
+            const urlView = getViewFromPath();
+            if (profile.role === 'admin') {
+              setView('adminDashboard');
+            } else if (LOGGED_IN_VIEWS.has(urlView)) {
+              setViewRaw(urlView); // don't push state again
+            } else {
+              setView('discover');
+            }
+          }
+        } else {
+          // No session — check if URL is a public view
+          const urlView = getViewFromPath();
+          if (['login', 'signup', 'forgotPassword', 'terms', 'privacy'].includes(urlView)) {
+            setViewRaw(urlView);
           }
         }
       } catch {
@@ -108,6 +153,16 @@ const App: React.FC = () => {
         setAllUsers([]);
         setView('landing');
       }
+      // Re-authenticate on token refresh (prevents accidental logout)
+      if (event === 'TOKEN_REFRESHED' && session?.user && !currentUser) {
+        const profile = await fetchUserProfile(session.user.id);
+        if (profile) {
+          setCurrentUser(profile);
+          const users = await fetchAllProfiles();
+          setAllUsers(users);
+          await refreshConnectionData(session.user.id);
+        }
+      }
     });
 
     return () => {
@@ -115,6 +170,30 @@ const App: React.FC = () => {
       subscription.unsubscribe();
     };
   }, []);
+
+  // ─── BROWSER BACK/FORWARD NAVIGATION ──────────────────────
+  useEffect(() => {
+    const handlePopState = () => {
+      if (suppressPopState.current) return;
+      const urlView = getViewFromPath();
+      // If user is logged in and tries to go to landing/login, show logout confirm
+      if (currentUser && !LOGGED_IN_VIEWS.has(urlView) && !['terms', 'privacy'].includes(urlView)) {
+        // Push back to current path to prevent leaving
+        window.history.pushState({ view }, '', VIEW_TO_PATH[view] || '/');
+        setShowLogoutConfirm(true);
+        return;
+      }
+      // If not logged in and trying to access protected views, go to landing
+      if (!currentUser && LOGGED_IN_VIEWS.has(urlView)) {
+        window.history.replaceState({ view: 'landing' }, '', '/');
+        setViewRaw('landing');
+        return;
+      }
+      setViewRaw(urlView);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentUser, view]);
 
   // ─── HEARTBEAT: update last_active every 5 minutes ─────────
   useEffect(() => {
@@ -124,18 +203,6 @@ const App: React.FC = () => {
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [currentUser?.id]);
-
-  // Prevent browser back button from going to landing while logged in
-  useEffect(() => {
-    if (!currentUser) return;
-    const handlePopState = () => {
-      window.history.pushState(null, '', window.location.href);
-      setShowLogoutConfirm(true);
-    };
-    window.history.pushState(null, '', window.location.href);
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [currentUser]);
 
   const handlePurchasePro = async () => {
     if (!currentUser) return;
@@ -197,9 +264,10 @@ const App: React.FC = () => {
     try { await signOut(); } catch {}
     setCurrentUser(null);
     setAllUsers([]);
-    setView('landing');
+    window.history.replaceState(null, '', '/');
+    setViewRaw('landing');
   };
-  const navigateToView = (newView: View) => { setIsLoading(true); setTimeout(() => { setView(newView); setIsLoading(false); }, 600); };
+  const navigateToView = (newView: View) => { setPageTransition(true); setTimeout(() => { setView(newView); setPageTransition(false); }, 300); };
 
   if (isDesktop) return <DesktopBlocker />;
   if (isLoading) return (
@@ -397,7 +465,15 @@ const App: React.FC = () => {
         </header>
       )}
 
-      <main className="flex-1 relative overflow-hidden bg-[#fffafa]">{renderContent()}</main>
+      <main className="flex-1 relative overflow-hidden bg-[#fffafa]">
+        {/* Page transition overlay */}
+        {pageTransition && (
+          <div className="absolute inset-0 z-[90] bg-[#fffafa] flex items-center justify-center">
+            <div className="w-10 h-10 border-3 border-[#FF4458] border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+        {renderContent()}
+      </main>
 
       {/* Bottom Navigation */}
       {showNav && (

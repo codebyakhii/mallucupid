@@ -324,19 +324,19 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     <div className="h-full flex flex-col bg-[#fffafa] relative overflow-hidden">
       {/* Daily likes counter */}
       {currentUser.verified && (
-        <div className="absolute top-3 right-4 z-50">
-          <div className="bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
-            <span className="text-[10px] font-bold text-white/80">{DAILY_LIKE_LIMIT - dailyLikes} ❤️ left today</span>
+        <div className="absolute top-2 right-3 z-50">
+          <div className="bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
+            <span className="text-[9px] font-bold text-white/80">{DAILY_LIKE_LIMIT - dailyLikes} ❤️ left</span>
           </div>
         </div>
       )}
 
       {/* Card Stack Area */}
-      <div className="flex-1 relative px-3 pt-2 pb-1">
+      <div className="flex-1 relative px-2 pt-1.5 pb-1 min-h-0" style={{ maxHeight: 'calc(100% - 76px)' }}>
         {/* Background card (next card preview) */}
         {nextProfile && !flyOut && (
-          <div className="absolute inset-0 mx-3 mt-2 mb-1">
-            <div className="w-full h-full rounded-[1.8rem] overflow-hidden bg-gray-200" style={{ transform: `scale(${0.95 + Math.min(Math.abs(dragX) / 800, 0.05)})`, transition: isDragging ? 'none' : 'transform 0.4s ease' }}>
+          <div className="absolute inset-0 mx-2 mt-1.5 mb-1">
+            <div className="w-full h-full rounded-[1.5rem] overflow-hidden bg-gray-200" style={{ transform: `scale(${0.95 + Math.min(Math.abs(dragX) / 800, 0.05)})`, transition: isDragging ? 'none' : 'transform 0.4s ease' }}>
               <img src={nextProfile.imageUrl} className="w-full h-full object-cover" alt="" draggable={false} />
               <div className="absolute inset-0 bg-black/10" />
             </div>
@@ -346,7 +346,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
         {/* Main swipe card */}
         <div
           ref={cardRef}
-          className="relative w-full h-full rounded-[1.8rem] overflow-hidden shadow-[0_8px_40px_rgba(0,0,0,0.15)] select-none"
+          className="relative w-full h-full rounded-[1.5rem] overflow-hidden shadow-[0_8px_40px_rgba(0,0,0,0.15)] select-none"
           style={getCardStyle()}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
@@ -355,55 +355,55 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
         >
           <img
             src={allImages[imageIdx] || currentProfile.imageUrl}
-            className="w-full h-full object-cover pointer-events-none"
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
             alt={currentProfile.name}
             draggable={false}
           />
 
           {/* Image pagination bars */}
           {allImages.length > 1 && (
-            <div className="absolute top-3 left-0 right-0 flex justify-center gap-1 px-4 z-20">
+            <div className="absolute top-2.5 left-0 right-0 flex justify-center gap-1 px-3 z-20">
               {allImages.map((_, i) => (
-                <div key={i} className="flex-1 h-[3px] rounded-full transition-all duration-200" style={{ background: i === imageIdx ? '#fff' : 'rgba(255,255,255,0.35)', maxWidth: '60px' }} />
+                <div key={i} className="flex-1 h-[2.5px] rounded-full transition-all duration-200" style={{ background: i === imageIdx ? '#fff' : 'rgba(255,255,255,0.35)', maxWidth: '50px' }} />
               ))}
             </div>
           )}
 
           {/* LIKE stamp */}
-          <div className="absolute top-16 left-6 z-30 pointer-events-none" style={{ opacity: likeOpacity, transform: `rotate(-20deg) scale(${0.8 + likeOpacity * 0.4})` }}>
-            <div className="border-[4px] border-green-400 rounded-xl px-5 py-2">
-              <span className="text-green-400 font-black text-3xl tracking-wider">LIKE</span>
+          <div className="absolute top-[15%] left-5 z-30 pointer-events-none" style={{ opacity: likeOpacity, transform: `rotate(-20deg) scale(${0.8 + likeOpacity * 0.4})` }}>
+            <div className="border-[3px] border-green-400 rounded-lg px-4 py-1.5">
+              <span className="text-green-400 font-black text-2xl tracking-wider">LIKE</span>
             </div>
           </div>
 
           {/* NOPE stamp */}
-          <div className="absolute top-16 right-6 z-30 pointer-events-none" style={{ opacity: nopeOpacity, transform: `rotate(20deg) scale(${0.8 + nopeOpacity * 0.4})` }}>
-            <div className="border-[4px] border-red-400 rounded-xl px-5 py-2">
-              <span className="text-red-400 font-black text-3xl tracking-wider">NOPE</span>
+          <div className="absolute top-[15%] right-5 z-30 pointer-events-none" style={{ opacity: nopeOpacity, transform: `rotate(20deg) scale(${0.8 + nopeOpacity * 0.4})` }}>
+            <div className="border-[3px] border-red-400 rounded-lg px-4 py-1.5">
+              <span className="text-red-400 font-black text-2xl tracking-wider">NOPE</span>
             </div>
           </div>
 
           {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/15 to-transparent" />
 
           {/* Profile info overlay */}
-          <div className="absolute bottom-0 left-0 right-0 p-5 pb-5 z-10">
+          <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
             {/* Name + Age + Verified + Active Dot */}
-            <div className="flex items-center gap-2 mb-1.5">
-              <h2 className="text-[26px] font-black text-white leading-tight truncate">{toTitleCase(currentProfile.name)}, {currentProfile.age}</h2>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <h2 className="text-[20px] font-black text-white leading-tight truncate">{toTitleCase(currentProfile.name)}, {currentProfile.age}</h2>
               {currentProfile.verified && (
-                <svg className="w-6 h-6 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.64.304 1.24.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
                 </svg>
               )}
               {isRecentlyActive(currentProfile) && (
-                <span className="w-3 h-3 bg-green-400 rounded-full flex-shrink-0 border-2 border-white shadow-sm" title="Recently active" />
+                <span className="w-2.5 h-2.5 bg-green-400 rounded-full flex-shrink-0 border-[1.5px] border-white shadow-sm" />
               )}
             </div>
 
             {/* Job title / Company */}
             {(currentProfile.jobTitle || currentProfile.company || currentProfile.occupation) && (
-              <p className="text-sm text-white/80 font-semibold truncate mb-1">
+              <p className="text-[13px] text-white/80 font-semibold truncate mb-0.5">
                 {currentProfile.jobTitle
                   ? `${toTitleCase(currentProfile.jobTitle)}${currentProfile.company ? ` at ${toTitleCase(currentProfile.company)}` : ''}`
                   : toTitleCase(currentProfile.occupation)
@@ -411,40 +411,40 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
               </p>
             )}
 
-            {/* Distance */}
-            <div className="flex items-center gap-2 mb-2.5">
-              <p className="text-xs text-white/50 font-medium truncate">📍 {toTitleCase(currentProfile.location)}</p>
+            {/* Distance + Location */}
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <p className="text-[11px] text-white/50 font-medium truncate">📍 {toTitleCase(currentProfile.location)}</p>
               {currentDistance != null && (
-                <span className="text-xs text-white/40 font-medium">• {currentDistance < 1 ? '<1' : currentDistance} km away</span>
+                <span className="text-[11px] text-white/40 font-medium">• {currentDistance < 1 ? '<1' : currentDistance} km</span>
               )}
             </div>
 
             {/* Relationship intent badge */}
             {currentProfile.relationshipGoal && (
-              <div className="mb-2.5">
-                <span className="inline-flex items-center gap-1 bg-white/15 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full border border-white/20">
-                  💕 Looking for {currentProfile.relationshipGoal}
+              <div className="mb-1.5">
+                <span className="inline-flex items-center gap-1 bg-white/15 backdrop-blur-sm text-white text-[8px] font-bold px-2 py-0.5 rounded-full border border-white/20">
+                  💕 {currentProfile.relationshipGoal}
                 </span>
               </div>
             )}
 
-            {/* Bio snippet */}
+            {/* Bio snippet — hide on very small screens */}
             {currentProfile.bio && (
-              <p className="text-xs text-white/70 font-medium leading-relaxed line-clamp-2 mb-2.5">
+              <p className="text-[11px] text-white/70 font-medium leading-snug line-clamp-1 mb-1.5 hidden min-[400px]:block min-[400px]:line-clamp-2">
                 {currentProfile.bio}
               </p>
             )}
 
             {/* Shared interests badges */}
             {sharedInterests.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {sharedInterests.slice(0, 5).map((interest, i) => (
-                  <span key={i} className="bg-green-500/20 text-green-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-green-400/30">
+              <div className="flex flex-wrap gap-1 mb-2">
+                {sharedInterests.slice(0, 3).map((interest, i) => (
+                  <span key={i} className="bg-green-500/20 text-green-300 text-[8px] font-bold px-2 py-0.5 rounded-full border border-green-400/30">
                     ✦ {interest}
                   </span>
                 ))}
-                {sharedInterests.length > 5 && (
-                  <span className="text-[10px] text-white/40 font-medium self-center">+{sharedInterests.length - 5} more</span>
+                {sharedInterests.length > 3 && (
+                  <span className="text-[8px] text-white/40 font-medium self-center">+{sharedInterests.length - 3}</span>
                 )}
               </div>
             )}
@@ -452,7 +452,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
             {/* See More button */}
             <button
               onClick={(e) => { e.stopPropagation(); onShowDetails(currentProfile); }}
-              className="w-full py-2.5 bg-white/10 backdrop-blur-md rounded-xl text-white text-[11px] font-bold uppercase tracking-widest border border-white/15 active:scale-[0.98] transition-transform"
+              className="w-full py-2 bg-white/10 backdrop-blur-md rounded-xl text-white text-[10px] font-bold uppercase tracking-widest border border-white/15 active:scale-[0.98] transition-transform"
             >
               See more
             </button>
@@ -461,13 +461,13 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
       </div>
 
       {/* Action buttons */}
-      <div className="flex items-center justify-center gap-4 py-3.5 px-6">
+      <div className="flex items-center justify-center gap-3 py-2 px-4 flex-shrink-0">
         {/* Reject */}
         <button
           onClick={() => goNext('left')}
-          className="w-[60px] h-[60px] bg-white rounded-full flex items-center justify-center shadow-lg shadow-red-100/50 border border-gray-100 active:scale-90 transition-all"
+          className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg shadow-red-100/50 border border-gray-100 active:scale-90 transition-all"
         >
-          <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+          <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
@@ -476,11 +476,11 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
         <button
           onClick={handleRewind}
           disabled={!lastSwipe || !currentUser.verified}
-          className={`w-11 h-11 rounded-full flex items-center justify-center shadow-md border border-gray-100 active:scale-90 transition-all ${
+          className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md border border-gray-100 active:scale-90 transition-all ${
             lastSwipe && currentUser.verified ? 'bg-white shadow-yellow-100/50' : 'bg-gray-50 opacity-40'
           }`}
         >
-          <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+          <svg className="w-4.5 h-4.5 text-yellow-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
           </svg>
         </button>
@@ -488,9 +488,9 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
         {/* Info / Star */}
         <button
           onClick={() => onShowDetails(currentProfile)}
-          className="w-11 h-11 bg-white rounded-full flex items-center justify-center shadow-md shadow-blue-100/50 border border-gray-100 active:scale-90 transition-all"
+          className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-md shadow-blue-100/50 border border-gray-100 active:scale-90 transition-all"
         >
-          <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4.5 h-4.5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
           </svg>
         </button>
@@ -499,7 +499,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
         <button
           onClick={() => { if (!isRequested) goNext('right'); }}
           disabled={isRequested}
-          className={`w-[60px] h-[60px] rounded-full flex items-center justify-center shadow-lg border border-gray-100 active:scale-90 transition-all ${
+          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg border border-gray-100 active:scale-90 transition-all ${
             isRequested ? 'bg-gray-100 shadow-none' : !currentUser.verified ? 'bg-white shadow-orange-100/50' : 'bg-white shadow-green-100/50'
           }`}
         >

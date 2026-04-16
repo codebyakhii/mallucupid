@@ -93,6 +93,7 @@ const PrivateGallery: React.FC<PrivateGalleryProps> = ({ currentUser, onBack }) 
   const [viewerIdx, setViewerIdx] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const viewerTouchRef = useRef<{ x: number; y: number } | null>(null);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'loading') => {
     setToast({ message, type, visible: true });
@@ -708,7 +709,16 @@ const PrivateGallery: React.FC<PrivateGalleryProps> = ({ currentUser, onBack }) 
             <div className="w-10" />
           </div>
           {/* Content */}
-          <div className="flex-1 flex items-center justify-center px-4 overflow-hidden">
+          <div className="flex-1 flex items-center justify-center px-4 overflow-hidden"
+            onTouchStart={(e) => { viewerTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+            onTouchEnd={(e) => {
+              if (!viewerTouchRef.current || viewerItem.bundle_count <= 1) return;
+              const dx = e.changedTouches[0].clientX - viewerTouchRef.current.x;
+              const urls = getViewerUrls(viewerItem);
+              if (dx < -50) setViewerIdx(prev => Math.min(urls.length - 1, prev + 1));
+              else if (dx > 50) setViewerIdx(prev => Math.max(0, prev - 1));
+              viewerTouchRef.current = null;
+            }}>
             {viewerItem.type === 'image' ? (
               <img src={getViewerUrls(viewerItem)[viewerIdx]} className="max-w-full max-h-full object-contain" alt="" draggable={false}
                 style={{ pointerEvents: 'none' } as React.CSSProperties}

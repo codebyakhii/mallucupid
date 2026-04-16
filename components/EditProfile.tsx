@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Profile, Lifestyle, View } from '../types';
+import React, { useState, useRef, useCallback } from 'react';
+import { Profile, Lifestyle, View, LookingFor } from '../types';
 import { uploadProfileImage, updateUserProfile, deleteProfileImage, signOut } from '../lib/auth';
 import { searchPlaces, getCurrentPosition, reverseGeocode } from '../lib/location';
 
@@ -30,11 +30,11 @@ const LIFESTYLE_OPTIONS: Record<keyof Lifestyle, string[]> = {
   diet: ['Vegetarian', 'Vegan', 'Non-vegetarian', 'Pescatarian', 'Anything'],
 };
 
-const GENDER_OPTIONS = ['Men', 'Women', 'Transman', 'Transwoman', 'Other'];
 const ORIENTATION_OPTIONS = ['Straight', 'Gay', 'Lesbian', 'Bisexual', 'Queer', 'Pansexual'];
 const PRONOUN_OPTIONS = ['He/Him', 'She/Her', 'They/Them', 'He/They', 'She/They', 'Other'];
 const GOAL_OPTIONS = ['Longterm Partner', 'Short term', 'FWB', 'Any', 'New Friends'];
 const SHOW_ME_OPTIONS = ['Men', 'Women', 'Everyone'];
+const LOOKING_FOR_OPTIONS: LookingFor[] = ['Men', 'Women', 'Transmen', 'Transwomen', 'All'];
 
 // ─── TOAST ──────────────────────────────────────────────────────
 
@@ -66,6 +66,72 @@ const Section: React.FC<{ title: string; children: React.ReactNode; className?: 
   </div>
 );
 
+// ─── SECTION SAVE BUTTON ────────────────────────────────────────
+
+const SectionSaveBtn: React.FC<{ saving: boolean; onClick: () => void }> = ({ saving, onClick }) => (
+  <button
+    onClick={onClick}
+    disabled={saving}
+    className="mt-4 w-full py-3 bg-gradient-to-r from-[#FD267A] to-[#FF6036] text-white rounded-xl font-semibold text-sm active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+  >
+    {saving && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+    {saving ? 'Saving...' : 'Save'}
+  </button>
+);
+
+// ─── SELECTION MODAL ────────────────────────────────────────────
+
+interface SelectionModalProps {
+  title: string;
+  options: string[];
+  selected: string;
+  onSelect: (val: string) => void;
+  onClose: () => void;
+}
+
+const SelectionModal: React.FC<SelectionModalProps> = ({ title, options, selected, onSelect, onClose }) => (
+  <div className="fixed inset-0 z-[200] flex items-end justify-center">
+    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+    <div className="relative bg-white rounded-t-3xl w-full max-w-[420px] shadow-2xl pb-8 animate-[slideUp_0.25s_ease-out]">
+      <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+        <h3 className="text-[17px] font-bold text-gray-900">{title}</h3>
+        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center text-gray-400 active:scale-90 transition">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div className="max-h-[50vh] overflow-y-auto py-2">
+        {options.map(opt => (
+          <button
+            key={opt}
+            onClick={() => { onSelect(opt); onClose(); }}
+            className={`w-full px-6 py-4 text-left flex items-center justify-between transition-colors ${selected === opt ? 'bg-pink-50' : 'hover:bg-gray-50'}`}
+          >
+            <span className={`text-[15px] font-semibold ${selected === opt ? 'text-[#FD267A]' : 'text-gray-700'}`}>{opt}</span>
+            {selected === opt && (
+              <svg className="w-5 h-5 text-[#FD267A]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+// ─── DROPDOWN TRIGGER ───────────────────────────────────────────
+
+const DropdownField: React.FC<{ label: string; value: string; placeholder?: string; onClick: () => void }> = ({ label, value, placeholder, onClick }) => (
+  <div>
+    <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">{label}</label>
+    <button
+      onClick={onClick}
+      className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium text-left flex items-center justify-between transition-colors hover:border-[#FD267A]"
+    >
+      <span className={value ? 'text-gray-800' : 'text-gray-400'}>{value || placeholder || 'Select'}</span>
+      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+    </button>
+  </div>
+);
+
 // ─── MAIN COMPONENT ─────────────────────────────────────────────
 
 const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavigate, onLogout }) => {
@@ -76,7 +142,6 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
     lifestyle: userProfile.lifestyle || { drinking: '', smoking: '', workout: '', pets: '', diet: '' },
   }));
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'loading'; visible: boolean }>({ message: '', type: 'success', visible: false });
-  const [isSaving, setIsSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePhotoIndex, setDeletePhotoIndex] = useState<number | null>(null);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
@@ -88,14 +153,18 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Selection modal state
+  const [selectionModal, setSelectionModal] = useState<{ title: string; options: string[]; field: string; lifestyleKey?: keyof Lifestyle } | null>(null);
+
+  // Per-section saving state
+  const [savingSection, setSavingSection] = useState<string | null>(null);
+
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'loading') => {
     setToast({ message, type, visible: true });
     if (type !== 'loading') {
       setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 2200);
     }
   }, []);
-
-  const hideToast = useCallback(() => setToast(prev => ({ ...prev, visible: false })), []);
 
   // ── Update helpers ──
   const updateField = (field: string, value: any) => {
@@ -111,6 +180,19 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
       if (prev.interests.length >= 15) return prev;
       return { ...prev, interests: [...prev.interests, interest] };
     });
+  };
+
+  // ── Section save helper ──
+  const saveSection = async (sectionName: string, fields: Record<string, any>) => {
+    setSavingSection(sectionName);
+    try {
+      const updated = await updateUserProfile(userProfile.id, fields);
+      onUpdate({ ...profile, ...updated });
+      showToast('Saved', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Save failed', 'error');
+    }
+    setSavingSection(null);
   };
 
   // ── Photo handlers ──
@@ -221,53 +303,21 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
     setIsDetectingLocation(false);
   };
 
-  // ── Save all ──
-  const handleSave = async () => {
-    if (!profile.name.trim()) { showToast('Name is required', 'error'); return; }
-    if (!profile.bio.trim() || profile.bio.trim().length < 10) { showToast('Bio must be at least 10 characters', 'error'); return; }
-    if (!profile.location.trim()) { showToast('Location is required', 'error'); return; }
-
-    try {
-      setIsSaving(true);
-      showToast('Saving profile...', 'loading');
-      const updated = await updateUserProfile(userProfile.id, {
-        full_name: profile.name,
-        username: profile.username,
-        bio: profile.bio,
-        gender: profile.gender,
-        orientation: profile.orientation,
-        pronouns: profile.pronouns,
-        relationship_goal: profile.relationshipGoal,
-        interests: profile.interests,
-        lifestyle: profile.lifestyle,
-        job_title: profile.jobTitle,
-        company: profile.company,
-        education: profile.education,
-        location: profile.location,
-        latitude: profile.latitude,
-        longitude: profile.longitude,
-        show_me: profile.showMe,
-        age_min: profile.ageMin,
-        age_max: profile.ageMax,
-        max_distance: profile.maxDistance,
-        show_age: profile.showAge,
-        show_distance: profile.showDistance,
-        show_orientation: profile.showOrientation,
-        occupation: profile.occupation,
-      });
-      onUpdate({ ...profile, ...updated });
-      showToast('Profile saved', 'success');
-    } catch (err: any) {
-      showToast(err.message || 'Save failed', 'error');
-    }
-    setIsSaving(false);
-  };
-
   const handleLogout = async () => {
     try {
       await signOut();
       onLogout();
     } catch {}
+  };
+
+  // ── Selection modal handler ──
+  const handleSelectionModalSelect = (val: string) => {
+    if (!selectionModal) return;
+    if (selectionModal.lifestyleKey) {
+      updateLifestyle(selectionModal.lifestyleKey, val);
+    } else {
+      updateField(selectionModal.field, val);
+    }
   };
 
   // ── Render ──
@@ -280,14 +330,6 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
       <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
         <div className="flex items-center justify-between px-5 py-3.5">
           <h1 className="text-[22px] font-bold text-gray-900">Edit profile</h1>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="px-5 py-2 bg-gradient-to-r from-[#FD267A] to-[#FF6036] text-white rounded-full font-semibold text-sm active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
-          >
-            {isSaving && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-            {isSaving ? 'Saving...' : 'Save'}
-          </button>
         </div>
       </div>
 
@@ -295,7 +337,6 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
 
         {/* ════════ 2. PHOTO MANAGER ════════ */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          {/* Main photo viewer */}
           <div className="relative aspect-[3/4] bg-gray-100">
             {profile.images.length > 0 ? (
               <img src={profile.images[currentPhotoIndex]} className="w-full h-full object-cover" alt="Profile" draggable={false} />
@@ -306,7 +347,6 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               </div>
             )}
 
-            {/* Pagination dots */}
             {profile.images.length > 1 && (
               <div className="absolute top-3 left-3 right-3 flex gap-1 z-20">
                 {profile.images.map((_, i) => (
@@ -315,21 +355,18 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               </div>
             )}
 
-            {/* Left arrow */}
             {currentPhotoIndex > 0 && (
               <button onClick={() => setCurrentPhotoIndex(i => i - 1)} className="absolute left-2.5 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/25 backdrop-blur-sm rounded-full flex items-center justify-center text-white active:scale-90 transition z-10">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
               </button>
             )}
 
-            {/* Right arrow */}
             {currentPhotoIndex < profile.images.length - 1 && (
               <button onClick={() => setCurrentPhotoIndex(i => i + 1)} className="absolute right-2.5 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/25 backdrop-blur-sm rounded-full flex items-center justify-center text-white active:scale-90 transition z-10">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
               </button>
             )}
 
-            {/* Three-dot menu */}
             {profile.images.length > 0 && (
               <div className="absolute top-8 right-3 z-30">
                 <button
@@ -370,7 +407,6 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               </div>
             )}
 
-            {/* Photo counter + upload button */}
             <div className="absolute bottom-3 left-3 right-3 flex justify-between items-end z-10">
               <div className="bg-black/35 backdrop-blur-md px-3 py-1.5 rounded-full text-white text-[11px] font-bold">
                 {profile.images.length > 0 ? `${currentPhotoIndex + 1} / ${profile.images.length}` : '0'} photos
@@ -384,7 +420,6 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
             </div>
           </div>
 
-          {/* Thumbnail grid */}
           <div className="p-3">
             <div className="grid grid-cols-5 gap-2">
               {profile.images.map((img, i) => (
@@ -418,6 +453,10 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
             className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3.5 px-4 text-sm font-medium h-28 resize-none outline-none focus:border-[#FD267A] transition-colors placeholder:text-gray-400"
           />
           <p className="text-[11px] text-gray-400 mt-1.5 text-right">{profile.bio.length} / 500</p>
+          <SectionSaveBtn saving={savingSection === 'bio'} onClick={() => {
+            if (!profile.bio.trim() || profile.bio.trim().length < 10) { showToast('Bio must be at least 10 characters', 'error'); return; }
+            saveSection('bio', { bio: profile.bio });
+          }} />
         </Section>
 
         {/* ════════ 4. BASIC INFO ════════ */}
@@ -425,11 +464,11 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
           <div className="space-y-4">
             <div>
               <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">Name</label>
-              <input type="text" value={profile.name} onChange={(e) => updateField('name', e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:border-[#FD267A] transition-colors" />
+              <input type="text" value={profile.name} readOnly className="w-full bg-gray-100 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium text-gray-500 cursor-not-allowed" />
             </div>
             <div>
               <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">Username</label>
-              <input type="text" value={profile.username} onChange={(e) => updateField('username', e.target.value.toLowerCase())} className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:border-[#FD267A] transition-colors" />
+              <input type="text" value={profile.username} readOnly className="w-full bg-gray-100 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium text-gray-500 cursor-not-allowed" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -443,34 +482,24 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
             </div>
             <div>
               <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">Gender</label>
-              <div className="flex flex-wrap gap-2">
-                {GENDER_OPTIONS.map(g => (
-                  <button key={g} onClick={() => updateField('gender', g)}
-                    className={`px-4 py-2.5 rounded-full text-[13px] font-semibold transition-all ${profile.gender === g ? 'bg-gradient-to-r from-[#FD267A] to-[#FF6036] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  >{g}</button>
-                ))}
-              </div>
+              <input type="text" value={profile.gender} readOnly className="w-full bg-gray-100 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium text-gray-500 cursor-not-allowed" />
             </div>
-            <div>
-              <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">Sexual orientation</label>
-              <div className="flex flex-wrap gap-2">
-                {ORIENTATION_OPTIONS.map(o => (
-                  <button key={o} onClick={() => updateField('orientation', o)}
-                    className={`px-4 py-2.5 rounded-full text-[13px] font-semibold transition-all ${profile.orientation === o ? 'bg-gradient-to-r from-[#FD267A] to-[#FF6036] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  >{o}</button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">Pronouns</label>
-              <div className="flex flex-wrap gap-2">
-                {PRONOUN_OPTIONS.map(p => (
-                  <button key={p} onClick={() => updateField('pronouns', p)}
-                    className={`px-4 py-2.5 rounded-full text-[13px] font-semibold transition-all ${profile.pronouns === p ? 'bg-gradient-to-r from-[#FD267A] to-[#FF6036] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  >{p}</button>
-                ))}
-              </div>
-            </div>
+
+            <DropdownField
+              label="Sexual orientation"
+              value={profile.orientation}
+              placeholder="Select orientation"
+              onClick={() => setSelectionModal({ title: 'Sexual orientation', options: ORIENTATION_OPTIONS, field: 'orientation' })}
+            />
+            <DropdownField
+              label="Pronouns"
+              value={profile.pronouns}
+              placeholder="Select pronouns"
+              onClick={() => setSelectionModal({ title: 'Pronouns', options: PRONOUN_OPTIONS, field: 'pronouns' })}
+            />
+            <SectionSaveBtn saving={savingSection === 'basicInfo'} onClick={() => {
+              saveSection('basicInfo', { orientation: profile.orientation, pronouns: profile.pronouns });
+            }} />
           </div>
         </Section>
 
@@ -491,30 +520,27 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               );
             })}
           </div>
+          <SectionSaveBtn saving={savingSection === 'interests'} onClick={() => {
+            saveSection('interests', { interests: profile.interests });
+          }} />
         </Section>
 
         {/* ════════ 6. LIFESTYLE ════════ */}
         <Section title="Lifestyle">
-          <div className="space-y-5">
+          <div className="space-y-4">
             {(Object.entries(LIFESTYLE_OPTIONS) as [keyof Lifestyle, string[]][]).map(([key, options]) => (
-              <div key={key}>
-                <label className="text-[11px] font-semibold text-gray-500 mb-2 block capitalize">
-                  {key === 'workout' ? 'Exercise' : key}
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {options.map(opt => (
-                    <button
-                      key={opt}
-                      onClick={() => updateLifestyle(key, profile.lifestyle[key] === opt ? '' : opt)}
-                      className={`px-3.5 py-2 rounded-full text-[12px] font-semibold transition-all border ${profile.lifestyle[key] === opt ? 'bg-gradient-to-r from-[#FD267A] to-[#FF6036] text-white border-transparent shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <DropdownField
+                key={key}
+                label={key === 'workout' ? 'Exercise' : key.charAt(0).toUpperCase() + key.slice(1)}
+                value={profile.lifestyle[key]}
+                placeholder={`Select ${key === 'workout' ? 'exercise' : key}`}
+                onClick={() => setSelectionModal({ title: key === 'workout' ? 'Exercise' : key.charAt(0).toUpperCase() + key.slice(1), options, field: 'lifestyle', lifestyleKey: key })}
+              />
             ))}
           </div>
+          <SectionSaveBtn saving={savingSection === 'lifestyle'} onClick={() => {
+            saveSection('lifestyle', { lifestyle: profile.lifestyle });
+          }} />
         </Section>
 
         {/* ════════ 7. WORK & EDUCATION ════════ */}
@@ -537,21 +563,35 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               <input type="text" value={profile.occupation} onChange={(e) => updateField('occupation', e.target.value)} placeholder="e.g. Designer" className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:border-[#FD267A] transition-colors placeholder:text-gray-400" />
             </div>
           </div>
+          <SectionSaveBtn saving={savingSection === 'work'} onClick={() => {
+            saveSection('work', { job_title: profile.jobTitle, company: profile.company, education: profile.education, occupation: profile.occupation });
+          }} />
         </Section>
 
         {/* ════════ 8. RELATIONSHIP GOALS ════════ */}
         <Section title="Relationship goals">
-          <div className="flex flex-wrap gap-2">
-            {GOAL_OPTIONS.map(goal => (
-              <button
-                key={goal}
-                onClick={() => updateField('relationshipGoal', goal)}
-                className={`px-4 py-2.5 rounded-full text-[13px] font-semibold transition-all ${profile.relationshipGoal === goal ? 'bg-gradient-to-r from-[#FD267A] to-[#FF6036] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              >
-                {goal}
-              </button>
-            ))}
-          </div>
+          <DropdownField
+            label="What are you looking for?"
+            value={profile.relationshipGoal}
+            placeholder="Select a goal"
+            onClick={() => setSelectionModal({ title: 'Relationship goals', options: GOAL_OPTIONS, field: 'relationshipGoal' })}
+          />
+          <SectionSaveBtn saving={savingSection === 'goals'} onClick={() => {
+            saveSection('goals', { relationship_goal: profile.relationshipGoal });
+          }} />
+        </Section>
+
+        {/* ════════ 8b. LOOKING FOR ════════ */}
+        <Section title="Looking for">
+          <DropdownField
+            label="I'm interested in"
+            value={profile.lookingFor}
+            placeholder="Select preference"
+            onClick={() => setSelectionModal({ title: 'Looking for', options: LOOKING_FOR_OPTIONS, field: 'lookingFor' })}
+          />
+          <SectionSaveBtn saving={savingSection === 'lookingFor'} onClick={() => {
+            saveSection('lookingFor', { looking_for: profile.lookingFor });
+          }} />
         </Section>
 
         {/* ════════ 9. LOCATION SETTINGS ════════ */}
@@ -591,6 +631,10 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               {isDetectingLocation ? 'Detecting...' : 'Use current location'}
             </button>
           </div>
+          <SectionSaveBtn saving={savingSection === 'location'} onClick={() => {
+            if (!profile.location.trim()) { showToast('Location is required', 'error'); return; }
+            saveSection('location', { location: profile.location, latitude: profile.latitude, longitude: profile.longitude });
+          }} />
         </Section>
 
         {/* ════════ 10. DISCOVERY SETTINGS ════════ */}
@@ -611,7 +655,6 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               </div>
             </div>
 
-            {/* Age range slider */}
             <div>
               <div className="flex justify-between items-center mb-3">
                 <label className="text-[11px] font-semibold text-gray-500">Age range</label>
@@ -621,50 +664,37 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
                 <div className="flex items-center gap-3">
                   <span className="text-[11px] font-medium text-gray-400 w-8">Min</span>
                   <input
-                    type="range"
-                    min={18}
-                    max={80}
-                    value={profile.ageMin}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value);
-                      updateField('ageMin', Math.min(v, profile.ageMax - 1));
-                    }}
+                    type="range" min={18} max={80} value={profile.ageMin}
+                    onChange={(e) => { const v = parseInt(e.target.value); updateField('ageMin', Math.min(v, profile.ageMax - 1)); }}
                     className="flex-1 h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#FD267A]"
                   />
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-[11px] font-medium text-gray-400 w-8">Max</span>
                   <input
-                    type="range"
-                    min={18}
-                    max={80}
-                    value={profile.ageMax}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value);
-                      updateField('ageMax', Math.max(v, profile.ageMin + 1));
-                    }}
+                    type="range" min={18} max={80} value={profile.ageMax}
+                    onChange={(e) => { const v = parseInt(e.target.value); updateField('ageMax', Math.max(v, profile.ageMin + 1)); }}
                     className="flex-1 h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#FD267A]"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Distance slider */}
             <div>
               <div className="flex justify-between items-center mb-3">
                 <label className="text-[11px] font-semibold text-gray-500">Maximum distance</label>
                 <span className="text-[13px] font-bold text-gray-800">{profile.maxDistance} km</span>
               </div>
               <input
-                type="range"
-                min={1}
-                max={160}
-                value={profile.maxDistance}
+                type="range" min={1} max={160} value={profile.maxDistance}
                 onChange={(e) => updateField('maxDistance', parseInt(e.target.value))}
                 className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#FD267A]"
               />
             </div>
           </div>
+          <SectionSaveBtn saving={savingSection === 'discovery'} onClick={() => {
+            saveSection('discovery', { show_me: profile.showMe, age_min: profile.ageMin, age_max: profile.ageMax, max_distance: profile.maxDistance });
+          }} />
         </Section>
 
         {/* ════════ 11. VERIFICATION ════════ */}
@@ -718,6 +748,9 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               </div>
             ))}
           </div>
+          <SectionSaveBtn saving={savingSection === 'privacy'} onClick={() => {
+            saveSection('privacy', { show_age: profile.showAge, show_distance: profile.showDistance, show_orientation: profile.showOrientation });
+          }} />
         </Section>
 
         {/* ════════ 13. ACCOUNT ACTIONS ════════ */}
@@ -771,6 +804,17 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
         </div>
 
       </div>
+
+      {/* ══ SELECTION MODAL ══ */}
+      {selectionModal && (
+        <SelectionModal
+          title={selectionModal.title}
+          options={selectionModal.options}
+          selected={selectionModal.lifestyleKey ? profile.lifestyle[selectionModal.lifestyleKey] : (profile as any)[selectionModal.field] || ''}
+          onSelect={handleSelectionModalSelect}
+          onClose={() => setSelectionModal(null)}
+        />
+      )}
 
       {/* ══ DELETE PHOTO MODAL ══ */}
       {showDeleteModal && (

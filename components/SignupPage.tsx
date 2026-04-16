@@ -23,10 +23,10 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
     otp: '',
     location: '',
     bio: '',
-    gender: 'Female',
+    gender: 'Women',
     lookingFor: 'All',
     orientation: 'Straight',
-    goal: 'Longterm',
+    goal: 'Longterm Partner',
     images: [] as string[],
     imageFiles: [] as File[],
     acceptTerms: false,
@@ -528,19 +528,20 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
                 <div>
                   <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Gender</label>
                   <select value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-4 text-white text-xs font-bold outline-none">
-                    <option value="Male" className="bg-gray-800">Male</option>
-                    <option value="Female" className="bg-gray-800">Female</option>
-                    <option value="Trans Man" className="bg-gray-800">Trans Man</option>
-                    <option value="Trans Women" className="bg-gray-800">Trans Women</option>
+                    <option value="Men" className="bg-gray-800">Men</option>
+                    <option value="Women" className="bg-gray-800">Women</option>
+                    <option value="Transman" className="bg-gray-800">Transman</option>
+                    <option value="Transwoman" className="bg-gray-800">Transwoman</option>
+                    <option value="Other" className="bg-gray-800">Other</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Looking For</label>
                   <select value={formData.lookingFor} onChange={e => setFormData({...formData, lookingFor: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-4 text-white text-xs font-bold outline-none">
-                    <option value="Male" className="bg-gray-800">Male</option>
-                    <option value="Female" className="bg-gray-800">Female</option>
-                    <option value="Trans Man" className="bg-gray-800">Trans Man</option>
-                    <option value="Trans Women" className="bg-gray-800">Trans Women</option>
+                    <option value="Men" className="bg-gray-800">Men</option>
+                    <option value="Women" className="bg-gray-800">Women</option>
+                    <option value="Transmen" className="bg-gray-800">Transmen</option>
+                    <option value="Transwomen" className="bg-gray-800">Transwomen</option>
                     <option value="All" className="bg-gray-800">All</option>
                   </select>
                 </div>
@@ -558,10 +559,11 @@ const SignupPage: React.FC<SignupPageProps> = ({ onBack, onSuccess }) => {
               <div>
                 <label className="text-[10px] font-black text-white/60 uppercase tracking-widest ml-1 mb-1.5 block">Relationship Goal</label>
                 <select value={formData.goal} onChange={e => setFormData({...formData, goal: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-4 text-white text-xs font-bold outline-none">
-                  <option value="Longterm" className="bg-gray-800">Longterm</option>
-                  <option value="Short term" className="bg-gray-800">Short Term</option>
+                  <option value="Longterm Partner" className="bg-gray-800">Longterm partner</option>
+                  <option value="Short term" className="bg-gray-800">Short term</option>
                   <option value="FWB" className="bg-gray-800">FWB</option>
-                  <option value="New Friends" className="bg-gray-800">New Friends</option>
+                  <option value="Any" className="bg-gray-800">Any</option>
+                  <option value="New Friends" className="bg-gray-800">New friends</option>
                 </select>
               </div>
               <button 

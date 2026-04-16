@@ -532,6 +532,10 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
               <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">Education</label>
               <input type="text" value={profile.education} onChange={(e) => updateField('education', e.target.value)} placeholder="e.g. IIT Delhi" className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:border-[#FD267A] transition-colors placeholder:text-gray-400" />
             </div>
+            <div>
+              <label className="text-[11px] font-semibold text-gray-500 mb-1.5 block">Occupation</label>
+              <input type="text" value={profile.occupation} onChange={(e) => updateField('occupation', e.target.value)} placeholder="e.g. Designer" className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-sm font-medium outline-none focus:border-[#FD267A] transition-colors placeholder:text-gray-400" />
+            </div>
           </div>
         </Section>
 

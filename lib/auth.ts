@@ -48,6 +48,22 @@ export async function createUserProfile(authUserId: string, profileData: {
       status: 'active',
       verified: false,
       balance: 0,
+      interests: [],
+      occupation: '',
+      pronouns: '',
+      lifestyle: { drinking: '', smoking: '', workout: '', pets: '', diet: '' },
+      job_title: '',
+      company: '',
+      education: '',
+      latitude: null,
+      longitude: null,
+      show_me: 'Everyone',
+      age_min: 18,
+      age_max: 50,
+      max_distance: 50,
+      show_age: true,
+      show_distance: true,
+      show_orientation: true,
     })
     .select()
     .single();

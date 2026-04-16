@@ -248,8 +248,8 @@ const App: React.FC = () => {
           isPending={connections.some(c => c.fromId === currentUser.id && c.toId === selectedProfile.id && c.status === 'pending')}
           isPro={isPro} onGetPro={handlePurchasePro} />
       );
-      case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} messages={messages.filter(m => (m.senderId === currentUser.id && m.receiverId === selectedProfile.id) || (m.senderId === selectedProfile.id && m.receiverId === currentUser.id))} onSendMessage={(msg) => setMessages(prev => [...prev, { ...msg, id: `msg-${Date.now()}`, timestamp: Date.now() }])} currentUserId={currentUser.id} />;
-      case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} messages={messages} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => {}} isPro={isPro} onGetPro={handlePurchasePro} />;
+      case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} />;
+      case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => {}} isPro={isPro} onGetPro={handlePurchasePro} />;
       case 'profile': return currentUser && <EditProfile userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} onLogout={handleLogout} />;
       case 'earnings': return currentUser && <EarningsPage onBack={() => setView('profile')} earnings={earnings} onRequestWithdrawal={handleRequestWithdrawal} pendingWithdrawals={withdrawals} userProfile={currentUser} />;
       case 'bankAccount': return <BankAccountPage onBack={() => setView('profile')} />;

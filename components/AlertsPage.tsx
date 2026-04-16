@@ -5,6 +5,7 @@ import type { Profile } from '../types';
 
 interface AlertsPageProps {
   currentUserId: string;
+  isVerified: boolean;
   allUsers: Profile[];
   onConnectionAccepted: () => void;
 }
@@ -28,7 +29,7 @@ interface DbNotification {
   created_at: string;
 }
 
-const AlertsPage: React.FC<AlertsPageProps> = ({ currentUserId, allUsers, onConnectionAccepted }) => {
+const AlertsPage: React.FC<AlertsPageProps> = ({ currentUserId, isVerified, allUsers, onConnectionAccepted }) => {
   const [pendingRequests, setPendingRequests] = useState<DbConnectionRequest[]>([]);
   const [notifications, setNotifications] = useState<DbNotification[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -89,6 +90,10 @@ const AlertsPage: React.FC<AlertsPageProps> = ({ currentUserId, allUsers, onConn
   }, [currentUserId]);
 
   const handleAccept = async (requestId: string) => {
+    if (!isVerified) {
+      alert('You must verify your profile before accepting connection requests.');
+      return;
+    }
     setLoadingId(requestId);
     try {
       const { error } = await supabase.rpc('accept_connection_request', { request_id: requestId });

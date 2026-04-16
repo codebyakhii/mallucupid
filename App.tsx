@@ -226,6 +226,7 @@ const App: React.FC = () => {
 
   const handleLike = async (profile: Profile) => {
     if (!currentUser) return;
+    if (!currentUser.verified) return;
     try {
       const { error } = await supabase.from('connection_requests').insert({
         from_id: currentUser.id,
@@ -389,7 +390,7 @@ const App: React.FC = () => {
       case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} />;
       case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => refreshConnectionData()} isPro={isPro} onGetPro={handlePurchasePro} />;
       case 'friends': return currentUser && <FriendsPage currentUserId={currentUser.id} allUsers={allUsers} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} onConnectionChange={() => refreshConnectionData()} />;
-      case 'notifications': return currentUser && <AlertsPage currentUserId={currentUser.id} allUsers={allUsers} onConnectionAccepted={() => refreshConnectionData()} />;
+      case 'notifications': return currentUser && <AlertsPage currentUserId={currentUser.id} isVerified={currentUser.verified} allUsers={allUsers} onConnectionAccepted={() => refreshConnectionData()} />;
       case 'profile': return currentUser && <EditProfile userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} onLogout={handleLogout} />;
       case 'earnings': return currentUser && <EarningsPage onBack={() => setView('profile')} currentUser={currentUser} />;
       case 'bankAccount': return currentUser && <BankAccountPage onBack={() => setView('profile')} currentUser={currentUser} />;

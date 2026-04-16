@@ -38,6 +38,7 @@ const UserDetails: React.FC<UserDetailsProps> = ({
   const [isPending, setIsPending] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [showVerifyDialog, setShowVerifyDialog] = useState(false);
 
   const toTitleCase = (str: string) => str.toLowerCase().replace(/(^|\s)\S/g, L => L.toUpperCase());
 
@@ -88,6 +89,7 @@ const UserDetails: React.FC<UserDetailsProps> = ({
   }, [currentUserId, profile.id]);
 
   const handleConnect = async () => {
+    if (!currentUser.verified) { setShowVerifyDialog(true); return; }
     setActionLoading('connect');
     try {
       const { error } = await supabase.from('connection_requests').insert({
@@ -169,6 +171,7 @@ const UserDetails: React.FC<UserDetailsProps> = ({
   };
 
   const handleChatClick = () => {
+    if (!currentUser.verified) { setShowVerifyDialog(true); return; }
     if (!isLinked) { setShowConnectDialog(true); return; }
     if (!isPro) { setShowProDialog(true); return; }
     onChat();
@@ -403,7 +406,27 @@ const UserDetails: React.FC<UserDetailsProps> = ({
         </div>
       </div>
 
-      {/* ─── Connect First Dialog ─────────────────────────── */}
+      {/* ─── Verification Required Dialog ─────────────────── */}
+      {showVerifyDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowVerifyDialog(false)} />
+          <div className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl text-center">
+            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-black uppercase tracking-tighter mb-2 text-gray-800">Verification required</h3>
+            <p className="text-sm font-medium text-gray-500 mb-8 leading-relaxed">Only verified users can send connection requests and interact with other profiles.</p>
+            <button onClick={() => setShowVerifyDialog(false)}
+              className="w-full py-4 bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-transform">
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Connect First Dialog (verified only) ─────────── */}
       {showConnectDialog && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowConnectDialog(false)} />

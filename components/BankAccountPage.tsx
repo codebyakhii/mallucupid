@@ -1,11 +1,14 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Profile } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface BankAccountPageProps {
   onBack: () => void;
+  currentUser: Profile;
 }
 
-const BankAccountPage: React.FC<BankAccountPageProps> = ({ onBack }) => {
+const BankAccountPage: React.FC<BankAccountPageProps> = ({ onBack, currentUser }) => {
   const [details, setDetails] = useState({
     accountName: '',
     accountNumber: '',
@@ -17,18 +20,83 @@ const BankAccountPage: React.FC<BankAccountPageProps> = ({ onBack }) => {
   });
   const [showSuccess, setShowSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const loadBankInfo = async () => {
+      try {
+        const { data, error: fetchErr } = await supabase
+          .from('profiles')
+          .select('bank_info')
+          .eq('id', currentUser.id)
+          .single();
+        if (fetchErr) throw fetchErr;
+        if (data?.bank_info) {
+          setDetails({
+            accountName: data.bank_info.accountName || '',
+            accountNumber: data.bank_info.accountNumber || '',
+            ifsc: data.bank_info.ifsc || '',
+            bankName: data.bank_info.bankName || '',
+            branch: data.bank_info.branch || '',
+            paymentNumber: data.bank_info.paymentNumber || '',
+            upiId: data.bank_info.upiId || '',
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load bank info:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadBankInfo();
+  }, [currentUser.id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setDetails(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    setError('');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!details.accountName.trim() || !details.accountNumber.trim() || !details.ifsc.trim() || !details.bankName.trim()) {
+      setError('Account name, number, IFSC, and bank name are required');
+      return;
+    }
     setIsSaving(true);
-    setTimeout(() => {
-      setIsSaving(false);
+    setError('');
+    try {
+      const { error: updateErr } = await supabase
+        .from('profiles')
+        .update({
+          bank_info: {
+            accountName: details.accountName.trim(),
+            accountNumber: details.accountNumber.trim(),
+            ifsc: details.ifsc.trim().toUpperCase(),
+            bankName: details.bankName.trim(),
+            branch: details.branch.trim(),
+            paymentNumber: details.paymentNumber.trim(),
+            upiId: details.upiId.trim(),
+          }
+        })
+        .eq('id', currentUser.id);
+      if (updateErr) throw updateErr;
       setShowSuccess(true);
-    }, 1200);
+    } catch (err: any) {
+      console.error('Save bank info error:', err);
+      setError(err.message || 'Failed to save. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-full bg-[#fdf8f5] items-center justify-center">
+        <div className="w-10 h-10 border-[3px] border-gray-200 border-t-[#006400] rounded-full animate-spin" />
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-4">Loading bank details</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-[#fdf8f5] overflow-y-auto pb-40">
@@ -120,12 +188,17 @@ const BankAccountPage: React.FC<BankAccountPageProps> = ({ onBack }) => {
           </div>
         </div>
 
+        {error && (
+          <p className="text-red-500 text-[9px] font-black uppercase tracking-widest px-2 animate-pulse">{error}</p>
+        )}
+
         <button 
           onClick={handleSave}
           disabled={isSaving}
-          className="w-full py-5 bg-black text-white rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all mt-8"
+          className="w-full py-5 bg-black text-white rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all mt-8 disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          {isSaving ? 'Saving...' : 'Save Bank Details'}
+          {isSaving && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+          {isSaving ? 'Saving...' : 'Save bank details'}
         </button>
       </div>
 
@@ -139,9 +212,9 @@ const BankAccountPage: React.FC<BankAccountPageProps> = ({ onBack }) => {
                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                </svg>
             </div>
-            <h3 className="text-xl font-black uppercase tracking-tighter mb-4 text-black">Bank Details Updated</h3>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-relaxed mb-10 italic">
-              "Your information has been secured. Withdrawals will now be processed to this account."
+            <h3 className="text-xl font-black uppercase tracking-tighter mb-4 text-black">Bank details updated</h3>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-relaxed mb-10">
+              Your information has been saved securely. Withdrawals will be processed to this account.
             </p>
             <button 
               onClick={() => setShowSuccess(false)}

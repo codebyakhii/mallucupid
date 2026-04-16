@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { View, Profile, PurchaseRecord, Earning, WithdrawalRequest, ProConfig } from './types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Profile, ProConfig } from './types';
 import { LANDING_BG } from './constants';
 import { supabase } from './lib/supabase';
 import { loginWithEmail, fetchUserProfile, fetchAllProfiles, signOut, getCurrentSession } from './lib/auth';
@@ -36,9 +36,6 @@ const App: React.FC = () => {
   const [blockedIds, setBlockedIds] = useState<string[]>([]);
   const [activeRequests, setActiveRequests] = useState<string[]>([]);
   const [linkedProfiles, setLinkedProfiles] = useState<Profile[]>([]);
-  
-  const [earnings, setEarnings] = useState<Earning[]>([]);
-  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
 
   const isPro = useMemo(() => {
     if (!currentUser?.proExpiry) return false;
@@ -117,9 +114,11 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handlePurchasePro = () => {
+  const handlePurchasePro = async () => {
     if (!currentUser) return;
     const expiry = Date.now() + (proConfig.duration * 24 * 60 * 60 * 1000);
+    const { error } = await supabase.from('profiles').update({ pro_expiry: new Date(expiry).toISOString() }).eq('id', currentUser.id);
+    if (error) { console.error('Pro purchase error:', error); alert('Failed to activate Pro. Please try again.'); return; }
     const updated = { ...currentUser, proExpiry: expiry };
     setCurrentUser(updated);
     setAllUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
@@ -127,21 +126,6 @@ const App: React.FC = () => {
   };
 
   const handleUpdateProConfig = (newConfig: ProConfig) => setProConfig(newConfig);
-  const handleManualProToggle = (id: string, activate: boolean) => {
-    const expiry = activate ? Date.now() + (proConfig.duration * 24 * 60 * 60 * 1000) : 0;
-    setAllUsers(prev => prev.map(u => u.id === id ? { ...u, proExpiry: expiry } : u));
-  };
-  const handleVerifyUser = (id: string, verified: boolean) => setAllUsers(prev => prev.map(u => u.id === id ? { ...u, verified } : u));
-  const handleBlockUser = (id: string, block: boolean) => setAllUsers(prev => prev.map(u => u.id === id ? { ...u, status: block ? 'blocked' : 'active' } : u));
-  const handleAdminApproveWithdrawal = (id: string) => setWithdrawals(prev => prev.map(w => w.id === id ? { ...w, status: 'approved' } : w));
-  const handleAdminHoldWithdrawal = (id: string) => setWithdrawals(prev => prev.map(w => w.id === id ? { ...w, status: 'held' } : w));
-  const handleAdminRejectWithdrawal = (id: string) => setWithdrawals(prev => prev.map(w => w.id === id ? { ...w, status: 'rejected' } : w));
-  const handleDeleteUser = (id: string) => setAllUsers(prev => prev.filter(u => u.id !== id));
-
-  const handleRequestWithdrawal = (amount: number) => {
-    if (!currentUser) return;
-    setWithdrawals(prev => [...prev, { id: `wd-${Date.now()}`, userId: currentUser.id, username: currentUser.username, amount, status: 'pending', timestamp: Date.now() }]);
-  };
 
   const handleLike = async (profile: Profile) => {
     if (!currentUser) return;
@@ -262,12 +246,12 @@ const App: React.FC = () => {
       }} />;
       case 'forgotPassword': return <ForgotPasswordFlow onBack={() => setView('login')} onSuccess={() => setView('login')} />;
       case 'adminDashboard': return (
-        <AdminDashboard users={allUsers} withdrawalRequests={withdrawals} reports={[]} proConfig={proConfig}
-          onUpdateProConfig={handleUpdateProConfig} onManualProToggle={handleManualProToggle}
-          onApproveWithdrawal={handleAdminApproveWithdrawal} onHoldWithdrawal={handleAdminHoldWithdrawal}
-          onRejectWithdrawal={handleAdminRejectWithdrawal} onVerifyUser={(id) => handleVerifyUser(id, true)}
-          onUnverifyUser={(id) => handleVerifyUser(id, false)} onBlockUser={(id) => handleBlockUser(id, true)}
-          onDeleteUser={handleDeleteUser} onBack={() => setView('landing')} onLogout={handleLogout} />
+        <AdminDashboard 
+          onBack={() => setView('landing')} 
+          onLogout={handleLogout}
+          proConfig={proConfig}
+          onUpdateProConfig={handleUpdateProConfig}
+        />
       );
       case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} />;
       case 'userDetails': return selectedProfile && currentUser && (
@@ -281,8 +265,8 @@ const App: React.FC = () => {
       case 'friends': return currentUser && <FriendsPage currentUserId={currentUser.id} allUsers={allUsers} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} onConnectionChange={() => refreshConnectionData()} />;
       case 'notifications': return currentUser && <AlertsPage currentUserId={currentUser.id} allUsers={allUsers} onConnectionAccepted={() => refreshConnectionData()} />;
       case 'profile': return currentUser && <EditProfile userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} onLogout={handleLogout} />;
-      case 'earnings': return currentUser && <EarningsPage onBack={() => setView('profile')} earnings={earnings} onRequestWithdrawal={handleRequestWithdrawal} pendingWithdrawals={withdrawals} userProfile={currentUser} />;
-      case 'bankAccount': return <BankAccountPage onBack={() => setView('profile')} />;
+      case 'earnings': return currentUser && <EarningsPage onBack={() => setView('profile')} currentUser={currentUser} />;
+      case 'bankAccount': return currentUser && <BankAccountPage onBack={() => setView('profile')} currentUser={currentUser} />;
       case 'blockedUsers': return currentUser && <BlockedUsersPage currentUserId={currentUser.id} onBack={() => setView('profile')} allUsers={allUsers} />;
       case 'privateGallery': return currentUser && <PrivateGallery currentUser={currentUser} onBack={() => setView('profile')} />;
       case 'privateGalleryView': return selectedProfile && currentUser && <PrivateGalleryView targetProfile={selectedProfile} currentUserId={currentUser.id} onBack={() => setView('userDetails')} />;

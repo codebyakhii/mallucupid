@@ -85,11 +85,12 @@ export interface Notification {
 
 export interface WithdrawalRequest {
   id: string;
-  userId: string;
-  username: string;
+  user_id: string;
   amount: number;
   status: 'pending' | 'approved' | 'held' | 'rejected';
-  timestamp: number;
+  admin_notes: string | null;
+  processed_at: string | null;
+  created_at: string;
 }
 
 export interface UserReport {
@@ -123,34 +124,15 @@ export interface PurchaseRecord {
   userId: string;
 }
 
-export interface SubscriptionRecord {
-  roomId: string;
-  userId: string;
-  expiry: number;
-}
-
 export interface Earning {
   id: string;
-  type: 'purchase' | 'subscription';
+  user_id: string;
+  from_user_id: string | null;
+  type: 'gallery_purchase' | 'tip' | 'other';
   amount: number;
-  timestamp: number;
-  username: string;
-  targetId: string;
+  description: string;
+  related_id: string | null;
+  created_at: string;
 }
 
-export interface SecretContent {
-  id: string;
-  type: 'image' | 'video';
-  name: string;
-  url: string;
-  amount: number;
-  metadata: string;
-  ownerId: string;
-}
 
-export interface Subscriber {
-  id: string;
-  username: string;
-  imageUrl: string;
-  joinedAt: number;
-}

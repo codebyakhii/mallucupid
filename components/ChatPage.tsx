@@ -44,7 +44,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewingMedia, setViewingMedia] = useState<ChatMessage | null>(null);
-  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showDeleteMenu, setShowDeleteMenu] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -247,26 +249,66 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
     );
   };
 
-  // ─── DELETE HANDLERS ───────────────────────────
-  const handleDeleteForMe = async (msg: ChatMessage) => {
-    const isSender = msg.sender_id === currentUserId;
-    const field = isSender ? 'deleted_for_sender' : 'deleted_for_receiver';
-    await supabase.from('messages').update({ [field]: true, deleted_at: new Date().toISOString() }).eq('id', msg.id);
-    setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, [field]: true, deleted_at: new Date().toISOString() } : m));
-    setSelectedMessage(null);
+  // ─── DELETE HANDLERS (MULTI-SELECT) ─────────────
+  const handleDeleteForMe = async () => {
+    const ids = Array.from(selectedIds);
+    const now = new Date().toISOString();
+    for (const id of ids) {
+      const msg = messages.find((m) => m.id === id);
+      if (!msg) continue;
+      const isSender = msg.sender_id === currentUserId;
+      const field = isSender ? 'deleted_for_sender' : 'deleted_for_receiver';
+      await supabase.from('messages').update({ [field]: true, deleted_at: now }).eq('id', id);
+      setMessages((prev) => prev.map((m) => m.id === id ? { ...m, [field]: true, deleted_at: now } : m));
+    }
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    setShowDeleteMenu(false);
   };
 
-  const handleDeleteForEveryone = async (msg: ChatMessage) => {
-    if (msg.sender_id !== currentUserId) return;
-    await supabase.from('messages').update({ deleted_for_everyone: true, deleted_at: new Date().toISOString() }).eq('id', msg.id);
-    setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, deleted_for_everyone: true, deleted_at: new Date().toISOString() } : m));
-    setSelectedMessage(null);
+  const handleDeleteForEveryone = async () => {
+    const ids = Array.from(selectedIds);
+    const now = new Date().toISOString();
+    for (const id of ids) {
+      const msg = messages.find((m) => m.id === id);
+      if (!msg || msg.sender_id !== currentUserId) continue;
+      await supabase.from('messages').update({ deleted_for_everyone: true, deleted_at: now }).eq('id', id);
+      setMessages((prev) => prev.map((m) => m.id === id ? { ...m, deleted_for_everyone: true, deleted_at: now } : m));
+    }
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    setShowDeleteMenu(false);
+  };
+
+  const canDeleteForEveryone = Array.from(selectedIds).every((id) => {
+    const msg = messages.find((m) => m.id === id);
+    return msg && msg.sender_id === currentUserId;
+  });
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setShowDeleteMenu(false);
+  };
+
+  const toggleSelect = (msgId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) {
+        next.delete(msgId);
+        if (next.size === 0) setSelectMode(false);
+      } else {
+        next.add(msgId);
+      }
+      return next;
+    });
   };
 
   // ─── LONG PRESS HANDLER ───────────────────────
   const handleTouchStart = (msg: ChatMessage) => {
     longPressTimerRef.current = setTimeout(() => {
-      setSelectedMessage(msg);
+      setSelectMode(true);
+      setSelectedIds(new Set([msg.id]));
     }, 500);
   };
 
@@ -335,6 +377,17 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
       </div>
 
       {/* ─── HEADER ──────────────────────────── */}
+      {selectMode ? (
+        <header className="h-16 bg-white border-b border-gray-100 flex items-center px-4 gap-3 z-[150]">
+          <button onClick={exitSelectMode} className="p-2 -ml-2 text-gray-500 active:scale-90 transition-transform">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+          <p className="flex-1 text-sm font-bold text-gray-900">{selectedIds.size} selected</p>
+          <button onClick={() => setShowDeleteMenu(true)} className="p-2 text-red-500 active:scale-90 transition-transform">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+          </button>
+        </header>
+      ) : (
       <header className="h-16 bg-white border-b border-gray-100 flex items-center px-4 gap-3 z-[150]">
         <button onClick={onBack} className="p-2 -ml-2 text-gray-500 active:scale-90 transition-transform">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
@@ -359,6 +412,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
           </div>
         </div>
       </header>
+      )}
 
       {/* ─── MESSAGES AREA ───────────────────── */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-1 z-[100]">
@@ -425,13 +479,19 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
                   ) : (
                     // Normal message bubble
                     <div
-                      className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1`}
-                      onDoubleClick={() => handleSwipeReply(m)}
-                      onTouchStart={() => handleTouchStart(m)}
+                      className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 items-center gap-2 px-1 py-0.5 rounded-xl transition-colors ${selectMode && selectedIds.has(m.id) ? 'bg-blue-50' : ''}`}
+                      onDoubleClick={() => !selectMode && handleSwipeReply(m)}
+                      onTouchStart={() => !selectMode && handleTouchStart(m)}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchEnd}
-                      onContextMenu={(e) => { e.preventDefault(); setSelectedMessage(m); }}
+                      onContextMenu={(e) => { e.preventDefault(); if (!selectMode) { setSelectMode(true); setSelectedIds(new Set([m.id])); } }}
+                      onClick={() => { if (selectMode) toggleSelect(m.id); }}
                     >
+                      {selectMode && !isMine && (
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${selectedIds.has(m.id) ? 'bg-[#FF4458] border-[#FF4458]' : 'border-gray-300 bg-white'}`}>
+                          {selectedIds.has(m.id) && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                      )}
                       <div className="max-w-[78%]">
                         {replyMsg && (
                           <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] border-l-2 ${isMine ? 'bg-red-50 border-red-300 text-red-400 ml-auto' : 'bg-gray-50 border-gray-300 text-gray-400'}`} style={{ maxWidth: '90%' }}>
@@ -441,7 +501,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
                         )}
                         <div className={`px-4 py-2.5 rounded-3xl ${isMine ? 'bg-[#FF4458] text-white rounded-br-md' : 'bg-white text-gray-800 border border-gray-100 rounded-bl-md shadow-sm'}`}>
                           {m.media_url && m.media_type === 'image' && (
-                            <div onClick={() => setViewingMedia(m)} className="cursor-pointer">
+                            <div onClick={() => !selectMode && setViewingMedia(m)} className="cursor-pointer">
                               <img
                                 src={m.media_url}
                                 className="rounded-2xl w-full max-w-[240px] h-auto max-h-[280px] object-cover mb-1"
@@ -453,7 +513,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
                             </div>
                           )}
                           {m.media_url && m.media_type === 'video' && (
-                            <div onClick={() => setViewingMedia(m)} className="cursor-pointer">
+                            <div onClick={() => !selectMode && setViewingMedia(m)} className="cursor-pointer">
                               <video
                                 src={m.media_url}
                                 playsInline
@@ -474,6 +534,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
                           </div>
                         </div>
                       </div>
+                      {selectMode && isMine && (
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${selectedIds.has(m.id) ? 'bg-[#FF4458] border-[#FF4458]' : 'border-gray-300 bg-white'}`}>
+                          {selectedIds.has(m.id) && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                        </div>
+                      )}
                     </div>
                   )}
                 </React.Fragment>
@@ -511,10 +576,16 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
 
       {/* ─── ONCE-VIEW FULLSCREEN VIEWER ─────── */}
       {viewingOnceMedia && (
-        <div className="fixed inset-0 z-[300] bg-black flex items-center justify-center" onClick={() => setViewingOnceMedia(null)}>
+        <div className="fixed inset-0 z-[300] bg-black flex items-center justify-center" onContextMenu={(e) => e.preventDefault()}>
+          <button
+            onClick={() => setViewingOnceMedia(null)}
+            className="absolute top-6 right-6 z-10 w-10 h-10 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center active:scale-90 transition-transform"
+          >
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
           <div className="absolute top-6 left-0 right-0 flex justify-center z-10">
             <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-full">
-              <p className="text-white text-xs font-bold">View once · Tap to close</p>
+              <p className="text-white text-xs font-bold">View once</p>
             </div>
           </div>
           {viewingOnceMedia.media_type === 'image' ? (
@@ -573,34 +644,25 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
         </div>
       )}
 
-      {/* ─── MESSAGE ACTION MENU ─────────────── */}
-      {selectedMessage && (
-        <div className="fixed inset-0 z-[300] flex items-end justify-center" onClick={() => setSelectedMessage(null)}>
+      {/* ─── DELETE CONFIRMATION MENU ─────────── */}
+      {showDeleteMenu && selectedIds.size > 0 && (
+        <div className="fixed inset-0 z-[300] flex items-end justify-center" onClick={() => setShowDeleteMenu(false)}>
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative bg-white w-full max-w-md rounded-t-3xl pb-8 pt-3 px-2 safe-area-bottom" onClick={(e) => e.stopPropagation()}>
             <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-            <div className="px-3 pb-2 mb-2 border-b border-gray-100">
-              <p className="text-xs text-gray-400 truncate">
-                {selectedMessage.text || (selectedMessage.media_type === 'image' ? 'Photo' : selectedMessage.media_type === 'video' ? 'Video' : 'Message')}
-              </p>
-            </div>
+            <p className="text-center text-sm text-gray-500 mb-4">
+              Delete {selectedIds.size} message{selectedIds.size > 1 ? 's' : ''}?
+            </p>
             <button
-              onClick={() => { handleSwipeReply(selectedMessage); setSelectedMessage(null); }}
-              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl active:bg-gray-50 transition-colors"
-            >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
-              <span className="text-sm font-medium text-gray-800">Reply</span>
-            </button>
-            <button
-              onClick={() => handleDeleteForMe(selectedMessage)}
+              onClick={handleDeleteForMe}
               className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl active:bg-gray-50 transition-colors"
             >
               <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
               <span className="text-sm font-medium text-gray-800">Delete for me</span>
             </button>
-            {selectedMessage.sender_id === currentUserId && (
+            {canDeleteForEveryone && (
               <button
-                onClick={() => handleDeleteForEveryone(selectedMessage)}
+                onClick={handleDeleteForEveryone}
                 className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl active:bg-gray-50 transition-colors"
               >
                 <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
@@ -608,7 +670,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
               </button>
             )}
             <button
-              onClick={() => setSelectedMessage(null)}
+              onClick={() => setShowDeleteMenu(false)}
               className="w-full flex items-center justify-center py-3.5 mt-2 rounded-xl bg-gray-100 active:bg-gray-200 transition-colors"
             >
               <span className="text-sm font-semibold text-gray-500">Cancel</span>

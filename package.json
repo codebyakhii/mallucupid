@@ -10,12 +10,14 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.0",
+    "razorpay": "^2.9.6",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^22.14.0",
+    "@vercel/node": "^5.7.8",
     "@vitejs/plugin-react": "^5.0.0",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.8.2",

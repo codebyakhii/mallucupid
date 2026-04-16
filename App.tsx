@@ -267,18 +267,65 @@ const App: React.FC = () => {
   }, [currentUser?.id]);
 
   const handlePurchasePro = async (plan?: ProPlan) => {
-    if (!currentUser) return;
-    const duration = plan ? plan.durationDays : proConfig.duration;
+    if (!currentUser || !plan) return;
     setPurchasingPro(true);
     try {
-      const expiry = Date.now() + (duration * 24 * 60 * 60 * 1000);
-      const { error } = await supabase.from('profiles').update({ pro_expiry: new Date(expiry).toISOString() }).eq('id', currentUser.id);
-      if (error) { console.error('Pro purchase error:', error); alert('Failed to activate Pro. Please try again.'); return; }
-      const updated = { ...currentUser, proExpiry: expiry };
-      setCurrentUser(updated);
-      setAllUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
-      setShowProPlans(false);
-      setSelectedPlan(null);
+      // Step 1: Create order on server
+      const orderRes = await fetch('/api/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: plan.id, userId: currentUser.id }),
+      });
+      const orderData = await orderRes.json();
+      if (!orderRes.ok) { alert(orderData.error || 'Failed to create order'); return; }
+
+      // Step 2: Open Razorpay checkout
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: 'MalluCupid',
+        description: `Pro Plan – ${orderData.planName}`,
+        order_id: orderData.orderId,
+        prefill: {
+          name: orderData.userName || '',
+          email: orderData.userEmail || '',
+          contact: orderData.userPhone || '',
+        },
+        theme: { color: '#FF4458' },
+        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          // Step 3: Verify payment on server
+          try {
+            const verifyRes = await fetch('/api/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                userId: currentUser.id,
+                planId: plan.id,
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok) { alert(verifyData.error || 'Payment verification failed'); return; }
+            // Step 4: Update local state
+            const updated = { ...currentUser, proExpiry: verifyData.proExpiry };
+            setCurrentUser(updated);
+            setAllUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+            setShowProPlans(false);
+            setSelectedPlan(null);
+          } catch {
+            alert('Payment verification failed. If amount was deducted, contact support.');
+          }
+        },
+        modal: { ondismiss: () => setPurchasingPro(false) },
+      };
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', () => { alert('Payment failed. Please try again.'); setPurchasingPro(false); });
+      rzp.open();
+    } catch {
+      alert('Something went wrong. Please try again.');
     } finally {
       setPurchasingPro(false);
     }

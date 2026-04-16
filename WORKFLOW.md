@@ -60,19 +60,20 @@
 │   ├── FriendsPage.tsx       Connected users grid
 │   ├── AlertsPage.tsx        Connection requests & alerts
 │   ├── EditProfile.tsx        Edit own profile (full Tinder-style)
-│   ├── SecretGallery.tsx     Owner paid content management
-│   ├── SecretGalleryView.tsx Viewer paid content access
-│   ├── ExclusiveRoom.tsx     Owner subscription room
-│   ├── ExclusiveRoomView.tsx Viewer subscription access
+│   ├── PrivateGallery.tsx    Owner private gallery management
+│   ├── PrivateGalleryView.tsx Viewer private gallery access
 │   ├── EarningsPage.tsx      Earnings & withdrawal requests
 │   ├── BankAccountPage.tsx   Bank details form
 │   ├── BlockedUsersPage.tsx  Manage blocked users
-│   ├── VerificationPage.tsx  Id verification (not active)
-│   ├── AdminDashboard.tsx    Admin control panel
-│   └── AdminPanel.tsx        Admin sub-component
+│   ├── VerificationPage.tsx  KYC live photo verification
+│   └── AdminDashboard.tsx    6-tab admin control panel
 └── supabase/
     ├── migration.sql         Database schema + RLS policies
-    └── countries_seed.sql    197 countries table
+    ├── edit_profile_migration.sql  Profile field additions
+    ├── withdrawals_earnings_migration.sql  Withdrawals & earnings tables
+    ├── swipe_history_migration.sql  Swipe tracking table
+    ├── countries_seed.sql    197 countries table
+    └── config.toml           Supabase local config
 ```
 
 ### Dependencies
@@ -240,14 +241,14 @@ This prevents infinite recursion in admin RLS policies.
 
 ## 4. App Routing
 
-### View Type (21 views)
+### View Type (20 views)
 ```typescript
 type View = 'landing' | 'login' | 'signup' | 'forgotPassword'
   | 'discover' | 'friends' | 'profile' | 'chat' | 'inbox'
-  | 'userDetails' | 'notifications' | 'secretGallery'
-  | 'secretGalleryView' | 'earnings' | 'verification'
-  | 'blockedUsers' | 'exclusiveRoom' | 'exclusiveRoomView'
-  | 'adminDashboard' | 'bankAccount' | 'terms' | 'privacy';
+  | 'userDetails' | 'notifications' | 'privateGallery'
+  | 'privateGalleryView' | 'earnings' | 'verification'
+  | 'blockedUsers' | 'adminDashboard' | 'bankAccount'
+  | 'terms' | 'privacy';
 ```
 
 ### Navigation Methods
@@ -255,7 +256,7 @@ type View = 'landing' | 'login' | 'signup' | 'forgotPassword'
 - `navigateToView(view)` — 600ms loading transition with spinner
 
 ### Main Tab Views (show header + bottom nav)
-- `discover`, `friends`, `notifications`, `profile`, `inbox`
+- `discover`, `friends`, `privateGallery`, `notifications`, `profile`, `inbox`
 
 ### Render Map
 | View | Component | Access |
@@ -273,13 +274,12 @@ type View = 'landing' | 'login' | 'signup' | 'forgotPassword'
 | friends | FriendsPage | Authenticated |
 | notifications | AlertsPage | Authenticated |
 | profile | EditProfile | Authenticated |
-| secretGallery | SecretGallery | Authenticated |
-| secretGalleryView | SecretGalleryView | Authenticated |
-| exclusiveRoom | ExclusiveRoom | Authenticated |
-| exclusiveRoomView | ExclusiveRoomView | Authenticated |
+| privateGallery | PrivateGallery | Authenticated |
+| privateGalleryView | PrivateGalleryView | Authenticated |
 | earnings | EarningsPage | Authenticated |
 | bankAccount | BankAccountPage | Authenticated |
 | blockedUsers | BlockedUsersPage | Authenticated |
+| verification | VerificationPage | Authenticated |
 | adminDashboard | AdminDashboard | Admin only |
 
 ---

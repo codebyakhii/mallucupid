@@ -1,12 +1,12 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Profile, Lifestyle } from '../types';
+import { Profile, Lifestyle, View } from '../types';
 import { uploadProfileImage, updateUserProfile, deleteProfileImage, signOut } from '../lib/auth';
 import { searchPlaces, getCurrentPosition, reverseGeocode } from '../lib/location';
 
 interface EditProfileProps {
   userProfile: Profile;
   onUpdate: (profile: Profile) => void;
-  onNavigate: (view: string) => void;
+  onNavigate: (view: View) => void;
   onLogout: () => void;
 }
 

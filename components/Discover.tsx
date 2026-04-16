@@ -1,6 +1,7 @@
 
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Profile } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface DiscoverProps {
   users: Profile[];
@@ -19,19 +20,37 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
   const [isDragging, setIsDragging] = useState(false);
   const [flyOut, setFlyOut] = useState<'left' | 'right' | null>(null);
   const [imageIdx, setImageIdx] = useState(0);
+  const [swipedIds, setSwipedIds] = useState<Set<string>>(new Set());
+  const [swipeLoading, setSwipeLoading] = useState(true);
   const startRef = useRef({ x: 0, y: 0, time: 0 });
   const cardRef = useRef<HTMLDivElement>(null);
+
+  // Load swipe history on mount
+  useEffect(() => {
+    const loadSwipeHistory = async () => {
+      const { data } = await supabase.from('swipe_history').select('target_id').eq('user_id', currentUser.id);
+      if (data) setSwipedIds(new Set(data.map(s => s.target_id)));
+      setSwipeLoading(false);
+    };
+    loadSwipeHistory();
+  }, [currentUser.id]);
+
+  const recordSwipe = async (targetId: string, action: 'like' | 'dislike') => {
+    setSwipedIds(prev => new Set(prev).add(targetId));
+    await supabase.from('swipe_history').upsert({ user_id: currentUser.id, target_id: targetId, action }, { onConflict: 'user_id,target_id' });
+  };
 
   const filteredProfiles = useMemo(() => {
     return users.filter(p => {
       if (p.id === currentUser.id) return false;
       if (blockedIds.includes(p.id)) return false;
       if (p.status === 'blocked') return false;
+      if (swipedIds.has(p.id)) return false;
       const matchesLookingFor = currentUser.lookingFor === 'All' || currentUser.lookingFor === p.gender + 's' || (p.gender === 'Men' && currentUser.lookingFor === 'Men') || (p.gender === 'Women' && currentUser.lookingFor === 'Women');
       const matchesMe = p.lookingFor === 'All' || p.lookingFor === currentUser.gender + 's' || (currentUser.gender === 'Men' && p.lookingFor === 'Men') || (currentUser.gender === 'Women' && p.lookingFor === 'Women');
       return matchesLookingFor && matchesMe;
     });
-  }, [users, blockedIds, currentUser, activeRequests]);
+  }, [users, blockedIds, currentUser, activeRequests, swipedIds]);
 
   const currentProfile = filteredProfiles[currentIndex];
   const nextProfile = filteredProfiles[currentIndex + 1];
@@ -43,10 +62,14 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
   const goNext = useCallback((direction: 'left' | 'right') => {
     setFlyOut(direction);
     setTimeout(() => {
-      if (direction === 'right' && currentProfile && !isRequested) {
-        onLike(currentProfile);
-      } else if (direction === 'left') {
-        onDislike();
+      if (currentProfile) {
+        if (direction === 'right' && !isRequested) {
+          recordSwipe(currentProfile.id, 'like');
+          onLike(currentProfile);
+        } else if (direction === 'left') {
+          recordSwipe(currentProfile.id, 'dislike');
+          onDislike();
+        }
       }
       setCurrentIndex(prev => Math.min(prev + 1, filteredProfiles.length));
       setFlyOut(null);
@@ -106,6 +129,15 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     if (isDragging) return { transform: `translate(${dragX}px, ${dragY}px) rotate(${rotation}deg)`, transition: 'none' };
     return { transform: 'translate(0, 0) rotate(0deg)', transition: 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)' };
   };
+
+  if (swipeLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center bg-[#fffafa]">
+        <div className="w-12 h-12 border-4 border-gray-200 border-t-[#006400] rounded-full animate-spin"></div>
+        <p className="mt-4 text-[9px] font-black uppercase text-gray-400 tracking-widest">Loading profiles...</p>
+      </div>
+    );
+  }
 
   if (!currentProfile) {
     return (

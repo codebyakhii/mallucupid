@@ -114,6 +114,18 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Prevent browser back button from going to landing while logged in
+  useEffect(() => {
+    if (!currentUser) return;
+    const handlePopState = () => {
+      window.history.pushState(null, '', window.location.href);
+      setShowLogoutConfirm(true);
+    };
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentUser]);
+
   const handlePurchasePro = async () => {
     if (!currentUser) return;
     const expiry = Date.now() + (proConfig.duration * 24 * 60 * 60 * 1000);
@@ -247,7 +259,7 @@ const App: React.FC = () => {
       case 'forgotPassword': return <ForgotPasswordFlow onBack={() => setView('login')} onSuccess={() => setView('login')} />;
       case 'adminDashboard': return (
         <AdminDashboard 
-          onBack={() => setView('landing')} 
+          onBack={() => setShowLogoutConfirm(true)} 
           onLogout={handleLogout}
           proConfig={proConfig}
           onUpdateProConfig={handleUpdateProConfig}
@@ -261,7 +273,7 @@ const App: React.FC = () => {
           isPro={isPro} onGetPro={handlePurchasePro} onConnectionChange={() => refreshConnectionData()} />
       );
       case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} />;
-      case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => {}} isPro={isPro} onGetPro={handlePurchasePro} />;
+      case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => refreshConnectionData()} isPro={isPro} onGetPro={handlePurchasePro} />;
       case 'friends': return currentUser && <FriendsPage currentUserId={currentUser.id} allUsers={allUsers} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} onConnectionChange={() => refreshConnectionData()} />;
       case 'notifications': return currentUser && <AlertsPage currentUserId={currentUser.id} allUsers={allUsers} onConnectionAccepted={() => refreshConnectionData()} />;
       case 'profile': return currentUser && <EditProfile userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} onLogout={handleLogout} />;

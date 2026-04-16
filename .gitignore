@@ -31,3 +31,10 @@ fix-rls.mjs
 fix-rls.sql
 fix-user.mjs
 test-login.mjs
+
+# Android build outputs
+*.apk
+*.aab
+android/app/build/
+android/.gradle/
+android/mallucupid-release.keystore

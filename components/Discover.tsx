@@ -10,9 +10,12 @@ interface DiscoverProps {
   blockedIds: string[];
   currentUser: Profile;
   activeRequests: string[];
+  isPro?: boolean;
+  dailyLikeCount?: number;
+  dailyLikeLimit?: number;
 }
 
-const DAILY_LIKE_LIMIT = 100;
+
 
 // ─── Haversine distance (km) ────────────────────────────────
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -74,7 +77,7 @@ function isRecentlyActive(profile: Profile): boolean {
   return ms < 15 * 60 * 1000; // active within 15 min
 }
 
-const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDetails, blockedIds, currentUser, activeRequests }) => {
+const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDetails, blockedIds, currentUser, activeRequests, isPro, dailyLikeCount = 0, dailyLikeLimit = 100 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [dragX, setDragX] = useState(0);
   const [dragY, setDragY] = useState(0);
@@ -197,7 +200,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
         setShowVerifyDialog(true);
         return;
       }
-      if (dailyLikes >= DAILY_LIKE_LIMIT) {
+      if (!isPro && dailyLikes >= dailyLikeLimit) {
         setShowLimitDialog(true);
         return;
       }
@@ -323,10 +326,10 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
   return (
     <div className="h-full flex flex-col bg-[#fffafa] relative overflow-hidden">
       {/* Daily likes counter */}
-      {currentUser.verified && (
+      {currentUser.verified && !isPro && (
         <div className="absolute top-2 right-3 z-50">
           <div className="bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
-            <span className="text-[9px] font-bold text-white/80">{DAILY_LIKE_LIMIT - dailyLikes} ❤️ left</span>
+            <span className="text-[9px] font-bold text-white/80">{dailyLikeLimit - dailyLikes} ❤️ left</span>
           </div>
         </div>
       )}
@@ -557,7 +560,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
             </div>
             <h3 className="text-xl font-black uppercase tracking-tighter mb-2 text-gray-800">Out of Likes</h3>
             <p className="text-sm font-medium text-gray-500 mb-8 leading-relaxed">
-              You've used all {DAILY_LIKE_LIMIT} likes for today. Come back tomorrow or upgrade for unlimited likes!
+              You've used all {dailyLikeLimit} likes for today. Come back tomorrow or upgrade for unlimited likes!
             </p>
             <div className="space-y-3">
               <button

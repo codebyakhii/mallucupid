@@ -29,9 +29,14 @@ interface ChatPageProps {
   targetProfile: Profile;
   onBack: () => void;
   currentUserId: string;
+  isPro?: boolean;
+  onGetPro?: () => void;
+  proPrice?: number;
 }
 
-const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserId }) => {
+const FREE_MESSAGE_LIMIT = 5;
+
+const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserId, isPro, onGetPro, proPrice }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -47,6 +52,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
+  const [showMessageLimit, setShowMessageLimit] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -169,9 +175,14 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
     };
   }, [currentUserId, targetProfile.id]);
 
+  // ─── SENT MESSAGE COUNT (for free user limit) ──
+  const sentCount = messages.filter(m => m.sender_id === currentUserId && !m.deleted_for_everyone).length;
+  const messageLimitReached = !isPro && sentCount >= FREE_MESSAGE_LIMIT;
+
   // ─── SEND TEXT MESSAGE ─────────────────────────
   const handleSendText = async () => {
     if (!inputText.trim()) return;
+    if (messageLimitReached) { setShowMessageLimit(true); return; }
     const text = inputText.trim();
     setInputText('');
     setReplyTo(null);
@@ -201,6 +212,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (messageLimitReached) { setShowMessageLimit(true); if (fileInputRef.current) fileInputRef.current.value = ''; return; }
     if (file.size > 50 * 1024 * 1024) { alert('File too large. Maximum 50MB.'); return; }
 
     setIsUploading(true);
@@ -644,6 +656,38 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
         </div>
       )}
 
+      {/* ─── MESSAGE LIMIT DIALOG ───────────── */}
+      {showMessageLimit && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-8">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowMessageLimit(false)} />
+          <div className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl text-center">
+            <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-3xl">💬</span>
+            </div>
+            <h3 className="text-xl font-black uppercase tracking-tighter mb-2 text-gray-800">Message Limit</h3>
+            <p className="text-sm font-medium text-gray-500 mb-8 leading-relaxed">
+              You've used your {FREE_MESSAGE_LIMIT} free messages with {targetProfile.name.split(' ')[0]}. Upgrade to Pro for unlimited messaging!
+            </p>
+            <div className="space-y-3">
+              {onGetPro && (
+                <button
+                  onClick={() => { setShowMessageLimit(false); onGetPro(); }}
+                  className="w-full py-4 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-transform"
+                >
+                  Get Pro · Unlimited Chat{proPrice ? ` · ₹${proPrice}` : ''}
+                </button>
+              )}
+              <button
+                onClick={() => setShowMessageLimit(false)}
+                className="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl font-black uppercase tracking-widest text-[10px]"
+              >
+                Maybe Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── DELETE CONFIRMATION MENU ─────────── */}
       {showDeleteMenu && selectedIds.size > 0 && (
         <div className="fixed inset-0 z-[300] flex items-end justify-center" onClick={() => setShowDeleteMenu(false)}>
@@ -720,6 +764,15 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
       {/* ─── INPUT BAR ───────────────────────── */}
       <div className="px-4 py-3 bg-white border-t border-gray-100 safe-area-bottom z-[150]">
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
+        {messageLimitReached ? (
+          <button
+            onClick={() => setShowMessageLimit(true)}
+            className="w-full py-3 bg-gradient-to-r from-pink-50 to-purple-50 border border-purple-100 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+          >
+            <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+            <span className="text-xs font-bold text-purple-600">Upgrade to Pro for unlimited messages</span>
+          </button>
+        ) : (
         <div className="flex items-center gap-2">
           <button onClick={() => setShowMediaMenu(!showMediaMenu)}
             className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 active:scale-90 transition-transform flex-shrink-0">
@@ -736,6 +789,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
               placeholder="Message..."
               className="w-full bg-gray-100 rounded-full px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-100 placeholder-gray-400" />
           </div>
+          {!isPro && sentCount > 0 && (
+            <span className="text-[9px] font-bold text-gray-400 flex-shrink-0">{FREE_MESSAGE_LIMIT - sentCount} left</span>
+          )}
           {inputText.trim() ? (
             <button onClick={handleSendText} className="w-10 h-10 rounded-full bg-[#FF4458] flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform flex-shrink-0">
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
@@ -746,6 +802,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
             </button>
           )}
         </div>
+        )}
       </div>
     </div>
   );

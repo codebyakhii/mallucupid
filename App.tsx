@@ -58,7 +58,10 @@ const App: React.FC = () => {
   const [blockedIds, setBlockedIds] = useState<string[]>([]);
   const [activeRequests, setActiveRequests] = useState<string[]>([]);
   const [linkedProfiles, setLinkedProfiles] = useState<Profile[]>([]);
+  const [dailyLikeCount, setDailyLikeCount] = useState(0);
+  const [showLikeLimit, setShowLikeLimit] = useState(false);
   const suppressPopState = React.useRef(false);
+  const DAILY_LIKE_LIMIT = 100;
 
   // Wrapped setView that also updates the URL
   const setView = React.useCallback((newView: View) => {
@@ -119,6 +122,9 @@ const App: React.FC = () => {
             const users = await fetchAllProfiles();
             setAllUsers(users);
             await refreshConnectionData(session.user.id);
+            // Fetch daily like count for free users
+            const { data: likeData } = await supabase.rpc('get_daily_like_count', { p_user_id: session.user.id });
+            if (typeof likeData === 'number') setDailyLikeCount(likeData);
             // Restore view from URL if it's a logged-in view, else default
             const urlView = getViewFromPath();
             if (profile.role === 'admin') {
@@ -233,6 +239,11 @@ const App: React.FC = () => {
   const handleLike = async (profile: Profile) => {
     if (!currentUser) return;
     if (!currentUser.verified) return;
+    // Free user swipe limit check
+    if (!isPro && dailyLikeCount >= DAILY_LIKE_LIMIT) {
+      setShowLikeLimit(true);
+      return;
+    }
     try {
       const { error } = await supabase.from('connection_requests').insert({
         from_id: currentUser.id,
@@ -240,6 +251,11 @@ const App: React.FC = () => {
         status: 'pending',
       });
       if (error) { console.error(error); return; }
+      // Increment daily like count for free users
+      if (!isPro) {
+        const { data: likeData } = await supabase.rpc('increment_daily_like', { p_user_id: currentUser.id });
+        if (likeData?.count) setDailyLikeCount(likeData.count);
+      }
       await supabase.from('notifications').insert({
         user_id: profile.id,
         type: 'request',
@@ -386,14 +402,14 @@ const App: React.FC = () => {
           onUpdateProConfig={handleUpdateProConfig}
         />
       );
-      case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} />;
+      case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} isPro={isPro} dailyLikeCount={dailyLikeCount} dailyLikeLimit={DAILY_LIKE_LIMIT} />;
       case 'userDetails': return selectedProfile && currentUser && (
         <UserDetails profile={allUsers.find(u => u.id === selectedProfile.id) || selectedProfile} currentUser={currentUser} currentUserId={currentUser.id} onBack={() => setView('discover')}
           onOpenPrivateGallery={() => setView('privateGalleryView')}
           onChat={() => setView('chat')}
           isPro={isPro} onGetPro={handlePurchasePro} onConnectionChange={() => refreshConnectionData()} />
       );
-      case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} />;
+      case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} isPro={isPro} onGetPro={handlePurchasePro} proPrice={proConfig.price} />;
       case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => refreshConnectionData()} isPro={isPro} onGetPro={handlePurchasePro} />;
       case 'friends': return currentUser && <FriendsPage currentUserId={currentUser.id} allUsers={allUsers} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} onConnectionChange={() => refreshConnectionData()} />;
       case 'notifications': return currentUser && <AlertsPage currentUserId={currentUser.id} isVerified={currentUser.verified} allUsers={allUsers} onConnectionAccepted={() => refreshConnectionData()} />;
@@ -536,6 +552,27 @@ const App: React.FC = () => {
             })}
           </div>
         </nav>
+      )}
+
+      {/* Daily Like Limit Paywall Modal */}
+      {showLikeLimit && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-8">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowLikeLimit(false)} />
+          <div className="relative bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl text-center">
+            <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" /></svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Daily limit reached</h3>
+            <p className="text-sm text-gray-500 mb-1">You've used all {DAILY_LIKE_LIMIT} likes for today.</p>
+            <p className="text-sm text-gray-500 mb-6">Upgrade to Pro for unlimited likes every day.</p>
+            <div className="space-y-2.5">
+              <button onClick={() => { setShowLikeLimit(false); handlePurchasePro(); }} className="w-full py-3.5 bg-gradient-to-r from-[#FF4458] to-[#FF6B6B] text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg">
+                Get Pro · Unlimited likes
+              </button>
+              <button onClick={() => setShowLikeLimit(false)} className="w-full py-3.5 bg-gray-50 text-gray-500 rounded-2xl font-bold text-sm active:scale-95 transition-transform">Wait until tomorrow</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Logout Confirmation Modal */}

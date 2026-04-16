@@ -65,6 +65,7 @@ export interface Profile {
   verificationDocs?: VerificationDocs;
   balance?: number;
   proExpiry?: number;
+  lastActive?: string;
 }
 
 export interface ProConfig {

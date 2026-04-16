@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Profile } from '../types';
 import { supabase } from '../lib/supabase';
@@ -13,6 +12,67 @@ interface DiscoverProps {
   activeRequests: string[];
 }
 
+// ─── Haversine distance (km) ────────────────────────────────
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ─── Orientation-based matching ─────────────────────────────
+// Returns true if currentUser and target are compatible based on sexual orientation
+function isOrientationCompatible(me: Profile, them: Profile): boolean {
+  const myO = me.orientation;
+  const theirO = them.orientation;
+
+  // Gay: only match with same-gender people who are also Gay/Bisexual/Queer/Pansexual
+  if (myO === 'Gay') {
+    if (me.gender !== them.gender) return false;
+    return ['Gay', 'Bisexual', 'Queer', 'Pansexual'].includes(theirO);
+  }
+  // Lesbian: only match with Women/Transwomen who are also Lesbian/Bisexual/Queer/Pansexual
+  if (myO === 'Lesbian') {
+    const femGenders = ['Women', 'Transwoman'];
+    if (!femGenders.includes(me.gender) || !femGenders.includes(them.gender)) return false;
+    return ['Lesbian', 'Bisexual', 'Queer', 'Pansexual'].includes(theirO);
+  }
+  // Straight: only match with different-gender people who are Straight/Bisexual/Queer/Pansexual
+  if (myO === 'Straight') {
+    if (me.gender === them.gender) return false;
+    return ['Straight', 'Bisexual', 'Queer', 'Pansexual'].includes(theirO);
+  }
+  // Bisexual / Queer / Pansexual: open to anyone whose orientation is reciprocally compatible
+  if (['Bisexual', 'Queer', 'Pansexual'].includes(myO)) {
+    // They must also be open to our gender
+    if (theirO === 'Gay') return me.gender === them.gender;
+    if (theirO === 'Lesbian') {
+      const femGenders = ['Women', 'Transwoman'];
+      return femGenders.includes(me.gender) && femGenders.includes(them.gender);
+    }
+    if (theirO === 'Straight') return me.gender !== them.gender;
+    return true; // Both are Bisexual/Queer/Pansexual
+  }
+  return true;
+}
+
+// ─── Activity recency score ─────────────────────────────────
+function activityScore(profile: Profile): number {
+  if (!profile.lastActive) return 0;
+  const ms = Date.now() - new Date(profile.lastActive).getTime();
+  const hours = ms / (1000 * 60 * 60);
+  if (hours < 1) return 100;
+  if (hours < 6) return 80;
+  if (hours < 24) return 60;
+  if (hours < 72) return 40;
+  if (hours < 168) return 20; // 7 days
+  return 5;
+}
+
 const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDetails, blockedIds, currentUser, activeRequests }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [dragX, setDragX] = useState(0);
@@ -22,6 +82,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
   const [imageIdx, setImageIdx] = useState(0);
   const [swipedIds, setSwipedIds] = useState<Set<string>>(new Set());
   const [swipeLoading, setSwipeLoading] = useState(true);
+  const [verifyToast, setVerifyToast] = useState(false);
   const startRef = useRef({ x: 0, y: 0, time: 0 });
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -40,26 +101,94 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     await supabase.from('swipe_history').upsert({ user_id: currentUser.id, target_id: targetId, action }, { onConflict: 'user_id,target_id' });
   };
 
+  // ─── THE MATCHING ALGORITHM ────────────────────────────────
   const filteredProfiles = useMemo(() => {
-    return users.filter(p => {
-      if (p.id === currentUser.id) return false;
-      if (blockedIds.includes(p.id)) return false;
-      if (p.status === 'blocked') return false;
-      if (swipedIds.has(p.id)) return false;
-      const matchesLookingFor = currentUser.lookingFor === 'All' || currentUser.lookingFor === p.gender + 's' || (p.gender === 'Men' && currentUser.lookingFor === 'Men') || (p.gender === 'Women' && currentUser.lookingFor === 'Women');
-      const matchesMe = p.lookingFor === 'All' || p.lookingFor === currentUser.gender + 's' || (currentUser.gender === 'Men' && p.lookingFor === 'Men') || (currentUser.gender === 'Women' && p.lookingFor === 'Women');
-      return matchesLookingFor && matchesMe;
+    const myLat = currentUser.latitude;
+    const myLon = currentUser.longitude;
+    const hasMyLocation = myLat != null && myLon != null;
+
+    const scored = users
+      .filter(p => {
+        // 1. Exclude self, blocked, already swiped
+        if (p.id === currentUser.id) return false;
+        if (blockedIds.includes(p.id)) return false;
+        if (p.status === 'blocked') return false;
+        if (swipedIds.has(p.id)) return false;
+
+        // 2. Show Me filtering (bidirectional gender preference)
+        const myShowMe = currentUser.showMe || 'Everyone';
+        const theirShowMe = p.showMe || 'Everyone';
+        if (myShowMe !== 'Everyone') {
+          // "Men" should match gender "Men", "Women" should match gender "Women"
+          if (myShowMe === 'Men' && p.gender !== 'Men') return false;
+          if (myShowMe === 'Women' && p.gender !== 'Women') return false;
+        }
+        if (theirShowMe !== 'Everyone') {
+          if (theirShowMe === 'Men' && currentUser.gender !== 'Men') return false;
+          if (theirShowMe === 'Women' && currentUser.gender !== 'Women') return false;
+        }
+
+        // 3. Sexual Orientation filtering (bidirectional)
+        if (!isOrientationCompatible(currentUser, p)) return false;
+        if (!isOrientationCompatible(p, currentUser)) return false;
+
+        // 4. Age filtering — respect BOTH users' age range preferences
+        if (p.age < currentUser.ageMin || p.age > currentUser.ageMax) return false;
+        if (currentUser.age < p.ageMin || currentUser.age > p.ageMax) return false;
+
+        // 5. Distance filtering — only if both users have location data
+        if (hasMyLocation && p.latitude != null && p.longitude != null) {
+          const dist = haversineKm(myLat, myLon, p.latitude, p.longitude);
+          if (dist > currentUser.maxDistance) return false;
+        }
+
+        return true;
+      })
+      .map(p => {
+        // Compute distance for display + sorting
+        let distance: number | null = null;
+        if (hasMyLocation && p.latitude != null && p.longitude != null) {
+          distance = Math.round(haversineKm(myLat, myLon, p.latitude, p.longitude));
+        }
+        // Activity recency score for sorting
+        const recency = activityScore(p);
+        return { profile: p, distance, recency };
+      });
+
+    // 6. Sort by activity recency (most active first), then distance (closest first)
+    scored.sort((a, b) => {
+      // Primary: activity recency (higher = more recent = first)
+      if (b.recency !== a.recency) return b.recency - a.recency;
+      // Secondary: distance (closer first), put null-distance at the end
+      if (a.distance != null && b.distance != null) return a.distance - b.distance;
+      if (a.distance != null) return -1;
+      if (b.distance != null) return 1;
+      return 0;
     });
+
+    return scored;
   }, [users, blockedIds, currentUser, activeRequests, swipedIds]);
 
-  const currentProfile = filteredProfiles[currentIndex];
-  const nextProfile = filteredProfiles[currentIndex + 1];
+  const currentItem = filteredProfiles[currentIndex];
+  const nextItem = filteredProfiles[currentIndex + 1];
+  const currentProfile = currentItem?.profile;
+  const nextProfile = nextItem?.profile;
+  const currentDistance = currentItem?.distance;
   const isRequested = currentProfile ? activeRequests.includes(currentProfile.id) : false;
   const toTitleCase = (str: string) => str.toLowerCase().replace(/(^|\s)\S/g, L => L.toUpperCase());
 
   const allImages = currentProfile ? [currentProfile.imageUrl, ...(currentProfile.images || [])].filter(Boolean) : [];
 
   const goNext = useCallback((direction: 'left' | 'right') => {
+    if (direction === 'right') {
+      // ONLY VERIFIED USERS CAN SWIPE RIGHT (send match request)
+      if (!currentUser.verified) {
+        setVerifyToast(true);
+        setTimeout(() => setVerifyToast(false), 3000);
+        return;
+      }
+    }
+
     setFlyOut(direction);
     setTimeout(() => {
       if (currentProfile) {
@@ -77,7 +206,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
       setDragY(0);
       setImageIdx(0);
     }, 300);
-  }, [currentProfile, isRequested, onLike, onDislike, filteredProfiles.length]);
+  }, [currentProfile, isRequested, onLike, onDislike, filteredProfiles.length, currentUser.verified]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -119,7 +248,6 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
   };
 
   const rotation = dragX * 0.08;
-  const opacity = Math.max(0, 1 - Math.abs(dragX) / 400);
   const likeOpacity = Math.min(1, Math.max(0, dragX / 100));
   const nopeOpacity = Math.min(1, Math.max(0, -dragX / 100));
 
@@ -130,6 +258,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     return { transform: 'translate(0, 0) rotate(0deg)', transition: 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)' };
   };
 
+  // ─── Loading state ────────────────────────────────────────
   if (swipeLoading) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-[#fffafa]">
@@ -139,6 +268,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     );
   }
 
+  // ─── Empty state ──────────────────────────────────────────
   if (!currentProfile) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-10 text-center bg-[#fffafa]">
@@ -153,6 +283,16 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
 
   return (
     <div className="h-full flex flex-col bg-[#fffafa] relative overflow-hidden">
+      {/* Verify toast */}
+      {verifyToast && (
+        <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[999] animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-red-500 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-sm font-medium">
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+            Verify your profile to send likes
+          </div>
+        </div>
+      )}
+
       {/* Card Stack Area */}
       <div className="flex-1 relative px-3 pt-2 pb-1">
         {/* Background card (next card preview) */}
@@ -219,7 +359,12 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
                   )}
                 </div>
                 <p className="text-sm text-white/70 font-medium truncate">{toTitleCase(currentProfile.occupation)}</p>
-                <p className="text-xs text-white/50 font-medium mt-0.5 truncate">📍 {toTitleCase(currentProfile.location)}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-xs text-white/50 font-medium truncate">📍 {toTitleCase(currentProfile.location)}</p>
+                  {currentDistance != null && (
+                    <span className="text-xs text-white/40 font-medium">• {currentDistance < 1 ? '<1' : currentDistance} km</span>
+                  )}
+                </div>
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); onShowDetails(currentProfile); }}
@@ -244,7 +389,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
           </svg>
         </button>
 
-        {/* Super Like / Star button */}
+        {/* Info / Star button */}
         <button
           onClick={() => { onShowDetails(currentProfile); }}
           className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg shadow-blue-100/50 border border-gray-100 active:scale-90 transition-all"
@@ -254,17 +399,23 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
           </svg>
         </button>
 
-        {/* Like / Connect button */}
+        {/* Like / Connect button — shows lock if not verified */}
         <button
           onClick={() => { if (!isRequested) goNext('right'); }}
           disabled={isRequested}
           className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg border border-gray-100 active:scale-90 transition-all ${
-            isRequested ? 'bg-gray-100 shadow-none' : 'bg-white shadow-green-100/50'
+            isRequested ? 'bg-gray-100 shadow-none' : !currentUser.verified ? 'bg-white shadow-orange-100/50' : 'bg-white shadow-green-100/50'
           }`}
         >
-          <svg className={`w-8 h-8 ${isRequested ? 'text-gray-300' : 'text-green-500'}`} fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-          </svg>
+          {!currentUser.verified ? (
+            <svg className="w-7 h-7 text-orange-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+          ) : (
+            <svg className={`w-8 h-8 ${isRequested ? 'text-gray-300' : 'text-green-500'}`} fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>
+          )}
         </button>
       </div>
     </div>

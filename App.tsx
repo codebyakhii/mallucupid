@@ -81,6 +81,8 @@ const App: React.FC = () => {
           const profile = await fetchUserProfile(session.user.id);
           if (profile) {
             setCurrentUser(profile);
+            // Update last_active on session restore
+            supabase.from('profiles').update({ last_active: new Date().toISOString() }).eq('id', session.user.id).then();
             const users = await fetchAllProfiles();
             setAllUsers(users);
             await refreshConnectionData(session.user.id);
@@ -113,6 +115,15 @@ const App: React.FC = () => {
       subscription.unsubscribe();
     };
   }, []);
+
+  // ─── HEARTBEAT: update last_active every 5 minutes ─────────
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(() => {
+      supabase.from('profiles').update({ last_active: new Date().toISOString() }).eq('id', currentUser.id).then();
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
 
   // Prevent browser back button from going to landing while logged in
   useEffect(() => {
@@ -169,6 +180,8 @@ const App: React.FC = () => {
       if (profile.status === 'blocked') return { success: false, error: 'Your account has been suspended.' };
 
       setCurrentUser(profile);
+      // Update last_active on login
+      supabase.from('profiles').update({ last_active: new Date().toISOString() }).eq('id', authData.user.id).then();
       const users = await fetchAllProfiles();
       setAllUsers(users);
       await refreshConnectionData(authData.user.id);

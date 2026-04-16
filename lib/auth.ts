@@ -175,6 +175,7 @@ function mapDbToProfile(row: any): Profile {
     proExpiry: row.pro_expiry ? new Date(row.pro_expiry).getTime() : undefined,
     bankInfo: row.bank_info || undefined,
     verificationDocs: row.verification_docs || undefined,
+    lastActive: row.last_active || undefined,
   };
 }
 

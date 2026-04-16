@@ -12,6 +12,8 @@ interface DiscoverProps {
   activeRequests: string[];
 }
 
+const DAILY_LIKE_LIMIT = 100;
+
 // ─── Haversine distance (km) ────────────────────────────────
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -25,37 +27,30 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 }
 
 // ─── Orientation-based matching ─────────────────────────────
-// Returns true if currentUser and target are compatible based on sexual orientation
 function isOrientationCompatible(me: Profile, them: Profile): boolean {
   const myO = me.orientation;
   const theirO = them.orientation;
-
-  // Gay: only match with same-gender people who are also Gay/Bisexual/Queer/Pansexual
   if (myO === 'Gay') {
     if (me.gender !== them.gender) return false;
     return ['Gay', 'Bisexual', 'Queer', 'Pansexual'].includes(theirO);
   }
-  // Lesbian: only match with Women/Transwomen who are also Lesbian/Bisexual/Queer/Pansexual
   if (myO === 'Lesbian') {
     const femGenders = ['Women', 'Transwoman'];
     if (!femGenders.includes(me.gender) || !femGenders.includes(them.gender)) return false;
     return ['Lesbian', 'Bisexual', 'Queer', 'Pansexual'].includes(theirO);
   }
-  // Straight: only match with different-gender people who are Straight/Bisexual/Queer/Pansexual
   if (myO === 'Straight') {
     if (me.gender === them.gender) return false;
     return ['Straight', 'Bisexual', 'Queer', 'Pansexual'].includes(theirO);
   }
-  // Bisexual / Queer / Pansexual: open to anyone whose orientation is reciprocally compatible
   if (['Bisexual', 'Queer', 'Pansexual'].includes(myO)) {
-    // They must also be open to our gender
     if (theirO === 'Gay') return me.gender === them.gender;
     if (theirO === 'Lesbian') {
       const femGenders = ['Women', 'Transwoman'];
       return femGenders.includes(me.gender) && femGenders.includes(them.gender);
     }
     if (theirO === 'Straight') return me.gender !== them.gender;
-    return true; // Both are Bisexual/Queer/Pansexual
+    return true;
   }
   return true;
 }
@@ -69,8 +64,14 @@ function activityScore(profile: Profile): number {
   if (hours < 6) return 80;
   if (hours < 24) return 60;
   if (hours < 72) return 40;
-  if (hours < 168) return 20; // 7 days
+  if (hours < 168) return 20;
   return 5;
+}
+
+function isRecentlyActive(profile: Profile): boolean {
+  if (!profile.lastActive) return false;
+  const ms = Date.now() - new Date(profile.lastActive).getTime();
+  return ms < 15 * 60 * 1000; // active within 15 min
 }
 
 const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDetails, blockedIds, currentUser, activeRequests }) => {
@@ -82,22 +83,37 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
   const [imageIdx, setImageIdx] = useState(0);
   const [swipedIds, setSwipedIds] = useState<Set<string>>(new Set());
   const [swipeLoading, setSwipeLoading] = useState(true);
-  const [verifyToast, setVerifyToast] = useState(false);
+  const [dailyLikes, setDailyLikes] = useState(0);
+  const [showVerifyDialog, setShowVerifyDialog] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
+  const [lastSwipe, setLastSwipe] = useState<{ profile: Profile; action: 'like' | 'dislike'; index: number } | null>(null);
   const startRef = useRef({ x: 0, y: 0, time: 0 });
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Load swipe history on mount
+  // Load swipe history + daily like count on mount
   useEffect(() => {
-    const loadSwipeHistory = async () => {
+    const loadSwipeData = async () => {
       const { data } = await supabase.from('swipe_history').select('target_id').eq('user_id', currentUser.id);
       if (data) setSwipedIds(new Set(data.map(s => s.target_id)));
+
+      // Count today's likes
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const { count } = await supabase
+        .from('swipe_history')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', currentUser.id)
+        .eq('action', 'like')
+        .gte('created_at', today.toISOString());
+      setDailyLikes(count || 0);
       setSwipeLoading(false);
     };
-    loadSwipeHistory();
+    loadSwipeData();
   }, [currentUser.id]);
 
   const recordSwipe = async (targetId: string, action: 'like' | 'dislike') => {
     setSwipedIds(prev => new Set(prev).add(targetId));
+    if (action === 'like') setDailyLikes(prev => prev + 1);
     await supabase.from('swipe_history').upsert({ user_id: currentUser.id, target_id: targetId, action }, { onConflict: 'user_id,target_id' });
   };
 
@@ -109,17 +125,14 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
 
     const scored = users
       .filter(p => {
-        // 1. Exclude self, blocked, already swiped
         if (p.id === currentUser.id) return false;
         if (blockedIds.includes(p.id)) return false;
         if (p.status === 'blocked') return false;
         if (swipedIds.has(p.id)) return false;
 
-        // 2. Show Me filtering (bidirectional gender preference)
         const myShowMe = currentUser.showMe || 'Everyone';
         const theirShowMe = p.showMe || 'Everyone';
         if (myShowMe !== 'Everyone') {
-          // "Men" should match gender "Men", "Women" should match gender "Women"
           if (myShowMe === 'Men' && p.gender !== 'Men') return false;
           if (myShowMe === 'Women' && p.gender !== 'Women') return false;
         }
@@ -128,15 +141,12 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
           if (theirShowMe === 'Women' && currentUser.gender !== 'Women') return false;
         }
 
-        // 3. Sexual Orientation filtering (bidirectional)
         if (!isOrientationCompatible(currentUser, p)) return false;
         if (!isOrientationCompatible(p, currentUser)) return false;
 
-        // 4. Age filtering — respect BOTH users' age range preferences
         if (p.age < currentUser.ageMin || p.age > currentUser.ageMax) return false;
         if (currentUser.age < p.ageMin || currentUser.age > p.ageMax) return false;
 
-        // 5. Distance filtering — only if both users have location data
         if (hasMyLocation && p.latitude != null && p.longitude != null) {
           const dist = haversineKm(myLat, myLon, p.latitude, p.longitude);
           if (dist > currentUser.maxDistance) return false;
@@ -145,21 +155,16 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
         return true;
       })
       .map(p => {
-        // Compute distance for display + sorting
         let distance: number | null = null;
         if (hasMyLocation && p.latitude != null && p.longitude != null) {
           distance = Math.round(haversineKm(myLat, myLon, p.latitude, p.longitude));
         }
-        // Activity recency score for sorting
         const recency = activityScore(p);
         return { profile: p, distance, recency };
       });
 
-    // 6. Sort by activity recency (most active first), then distance (closest first)
     scored.sort((a, b) => {
-      // Primary: activity recency (higher = more recent = first)
       if (b.recency !== a.recency) return b.recency - a.recency;
-      // Secondary: distance (closer first), put null-distance at the end
       if (a.distance != null && b.distance != null) return a.distance - b.distance;
       if (a.distance != null) return -1;
       if (b.distance != null) return 1;
@@ -177,14 +182,23 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
   const isRequested = currentProfile ? activeRequests.includes(currentProfile.id) : false;
   const toTitleCase = (str: string) => str.toLowerCase().replace(/(^|\s)\S/g, L => L.toUpperCase());
 
-  const allImages = currentProfile ? [currentProfile.imageUrl, ...(currentProfile.images || [])].filter(Boolean) : [];
+  const allImages = currentProfile ? [currentProfile.imageUrl, ...(currentProfile.images || [])].filter(Boolean).slice(0, 9) : [];
+
+  // Shared interests between current user and the profile being viewed
+  const sharedInterests = useMemo(() => {
+    if (!currentProfile) return [];
+    const myInterests = new Set((currentUser.interests || []).map(i => i.toLowerCase()));
+    return (currentProfile.interests || []).filter(i => myInterests.has(i.toLowerCase()));
+  }, [currentProfile, currentUser.interests]);
 
   const goNext = useCallback((direction: 'left' | 'right') => {
     if (direction === 'right') {
-      // ONLY VERIFIED USERS CAN SWIPE RIGHT (send match request)
       if (!currentUser.verified) {
-        setVerifyToast(true);
-        setTimeout(() => setVerifyToast(false), 3000);
+        setShowVerifyDialog(true);
+        return;
+      }
+      if (dailyLikes >= DAILY_LIKE_LIMIT) {
+        setShowLimitDialog(true);
         return;
       }
     }
@@ -192,6 +206,7 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     setFlyOut(direction);
     setTimeout(() => {
       if (currentProfile) {
+        setLastSwipe({ profile: currentProfile, action: direction === 'right' ? 'like' : 'dislike', index: currentIndex });
         if (direction === 'right' && !isRequested) {
           recordSwipe(currentProfile.id, 'like');
           onLike(currentProfile);
@@ -206,7 +221,41 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
       setDragY(0);
       setImageIdx(0);
     }, 300);
-  }, [currentProfile, isRequested, onLike, onDislike, filteredProfiles.length, currentUser.verified]);
+  }, [currentProfile, isRequested, onLike, onDislike, filteredProfiles.length, currentUser.verified, dailyLikes, currentIndex]);
+
+  // Rewind: undo last swipe (verified only)
+  const handleRewind = useCallback(async () => {
+    if (!lastSwipe || !currentUser.verified) return;
+    try {
+      await supabase
+        .from('swipe_history')
+        .delete()
+        .eq('user_id', currentUser.id)
+        .eq('target_id', lastSwipe.profile.id);
+
+      setSwipedIds(prev => {
+        const next = new Set(prev);
+        next.delete(lastSwipe.profile.id);
+        return next;
+      });
+
+      if (lastSwipe.action === 'like') {
+        setDailyLikes(prev => Math.max(0, prev - 1));
+        await supabase
+          .from('connection_requests')
+          .delete()
+          .eq('from_id', currentUser.id)
+          .eq('to_id', lastSwipe.profile.id)
+          .eq('status', 'pending');
+      }
+
+      setCurrentIndex(lastSwipe.index);
+      setImageIdx(0);
+      setLastSwipe(null);
+    } catch (err) {
+      console.error('Rewind failed:', err);
+    }
+  }, [lastSwipe, currentUser.id, currentUser.verified]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -224,14 +273,9 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
   const onTouchEnd = () => {
     setIsDragging(false);
     const threshold = 80;
-    if (dragX > threshold) {
-      goNext('right');
-    } else if (dragX < -threshold) {
-      goNext('left');
-    } else {
-      setDragX(0);
-      setDragY(0);
-    }
+    if (dragX > threshold) goNext('right');
+    else if (dragX < -threshold) goNext('left');
+    else { setDragX(0); setDragY(0); }
   };
 
   const handleCardTap = (e: React.MouseEvent | React.TouchEvent) => {
@@ -240,11 +284,8 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     const rect = cardRef.current.getBoundingClientRect();
     const clientX = 'touches' in e ? e.changedTouches[0].clientX : e.clientX;
     const tapX = clientX - rect.left;
-    if (tapX < rect.width * 0.35) {
-      setImageIdx(prev => Math.max(0, prev - 1));
-    } else if (tapX > rect.width * 0.65) {
-      setImageIdx(prev => Math.min(allImages.length - 1, prev + 1));
-    }
+    if (tapX < rect.width * 0.35) setImageIdx(prev => Math.max(0, prev - 1));
+    else if (tapX > rect.width * 0.65) setImageIdx(prev => Math.min(allImages.length - 1, prev + 1));
   };
 
   const rotation = dragX * 0.08;
@@ -258,7 +299,6 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     return { transform: 'translate(0, 0) rotate(0deg)', transition: 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)' };
   };
 
-  // ─── Loading state ────────────────────────────────────────
   if (swipeLoading) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-[#fffafa]">
@@ -268,7 +308,6 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
     );
   }
 
-  // ─── Empty state ──────────────────────────────────────────
   if (!currentProfile) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-10 text-center bg-[#fffafa]">
@@ -283,12 +322,11 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
 
   return (
     <div className="h-full flex flex-col bg-[#fffafa] relative overflow-hidden">
-      {/* Verify toast */}
-      {verifyToast && (
-        <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[999] animate-[fadeIn_0.2s_ease-out]">
-          <div className="bg-red-500 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-sm font-medium">
-            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
-            Verify your profile to send likes
+      {/* Daily likes counter */}
+      {currentUser.verified && (
+        <div className="absolute top-3 right-4 z-50">
+          <div className="bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
+            <span className="text-[10px] font-bold text-white/80">{DAILY_LIKE_LIMIT - dailyLikes} ❤️ left today</span>
           </div>
         </div>
       )}
@@ -322,11 +360,11 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
             draggable={false}
           />
 
-          {/* Image pagination dots */}
+          {/* Image pagination bars */}
           {allImages.length > 1 && (
             <div className="absolute top-3 left-0 right-0 flex justify-center gap-1 px-4 z-20">
               {allImages.map((_, i) => (
-                <div key={i} className="flex-1 h-[3px] rounded-full" style={{ background: i === imageIdx ? '#fff' : 'rgba(255,255,255,0.35)', maxWidth: '60px' }} />
+                <div key={i} className="flex-1 h-[3px] rounded-full transition-all duration-200" style={{ background: i === imageIdx ? '#fff' : 'rgba(255,255,255,0.35)', maxWidth: '60px' }} />
               ))}
             </div>
           )}
@@ -345,65 +383,123 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
             </div>
           </div>
 
-          {/* Gradient overlay + profile info */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-transparent" />
-          <div className="absolute bottom-0 left-0 right-0 p-5 pb-6 z-10">
-            <div className="flex items-end justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h2 className="text-2xl font-black text-white truncate">{toTitleCase(currentProfile.name)}, {currentProfile.age}</h2>
-                  {currentProfile.verified && (
-                    <svg className="w-6 h-6 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.64.304 1.24.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
-                    </svg>
-                  )}
-                </div>
-                <p className="text-sm text-white/70 font-medium truncate">{toTitleCase(currentProfile.occupation)}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <p className="text-xs text-white/50 font-medium truncate">📍 {toTitleCase(currentProfile.location)}</p>
-                  {currentDistance != null && (
-                    <span className="text-xs text-white/40 font-medium">• {currentDistance < 1 ? '<1' : currentDistance} km</span>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); onShowDetails(currentProfile); }}
-                className="ml-3 w-11 h-11 bg-white/15 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/20 active:scale-90 transition-transform flex-shrink-0"
-              >
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              </button>
+          {/* Gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+
+          {/* Profile info overlay */}
+          <div className="absolute bottom-0 left-0 right-0 p-5 pb-5 z-10">
+            {/* Name + Age + Verified + Active Dot */}
+            <div className="flex items-center gap-2 mb-1.5">
+              <h2 className="text-[26px] font-black text-white leading-tight truncate">{toTitleCase(currentProfile.name)}, {currentProfile.age}</h2>
+              {currentProfile.verified && (
+                <svg className="w-6 h-6 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.64.304 1.24.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
+                </svg>
+              )}
+              {isRecentlyActive(currentProfile) && (
+                <span className="w-3 h-3 bg-green-400 rounded-full flex-shrink-0 border-2 border-white shadow-sm" title="Recently active" />
+              )}
             </div>
+
+            {/* Job title / Company */}
+            {(currentProfile.jobTitle || currentProfile.company || currentProfile.occupation) && (
+              <p className="text-sm text-white/80 font-semibold truncate mb-1">
+                {currentProfile.jobTitle
+                  ? `${toTitleCase(currentProfile.jobTitle)}${currentProfile.company ? ` at ${toTitleCase(currentProfile.company)}` : ''}`
+                  : toTitleCase(currentProfile.occupation)
+                }
+              </p>
+            )}
+
+            {/* Distance */}
+            <div className="flex items-center gap-2 mb-2.5">
+              <p className="text-xs text-white/50 font-medium truncate">📍 {toTitleCase(currentProfile.location)}</p>
+              {currentDistance != null && (
+                <span className="text-xs text-white/40 font-medium">• {currentDistance < 1 ? '<1' : currentDistance} km away</span>
+              )}
+            </div>
+
+            {/* Relationship intent badge */}
+            {currentProfile.relationshipGoal && (
+              <div className="mb-2.5">
+                <span className="inline-flex items-center gap-1 bg-white/15 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full border border-white/20">
+                  💕 Looking for {currentProfile.relationshipGoal}
+                </span>
+              </div>
+            )}
+
+            {/* Bio snippet */}
+            {currentProfile.bio && (
+              <p className="text-xs text-white/70 font-medium leading-relaxed line-clamp-2 mb-2.5">
+                {currentProfile.bio}
+              </p>
+            )}
+
+            {/* Shared interests badges */}
+            {sharedInterests.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {sharedInterests.slice(0, 5).map((interest, i) => (
+                  <span key={i} className="bg-green-500/20 text-green-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-green-400/30">
+                    ✦ {interest}
+                  </span>
+                ))}
+                {sharedInterests.length > 5 && (
+                  <span className="text-[10px] text-white/40 font-medium self-center">+{sharedInterests.length - 5} more</span>
+                )}
+              </div>
+            )}
+
+            {/* See More button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onShowDetails(currentProfile); }}
+              className="w-full py-2.5 bg-white/10 backdrop-blur-md rounded-xl text-white text-[11px] font-bold uppercase tracking-widest border border-white/15 active:scale-[0.98] transition-transform"
+            >
+              See more
+            </button>
           </div>
         </div>
       </div>
 
       {/* Action buttons */}
-      <div className="flex items-center justify-center gap-5 py-4 px-6">
-        {/* Reject button */}
+      <div className="flex items-center justify-center gap-4 py-3.5 px-6">
+        {/* Reject */}
         <button
           onClick={() => goNext('left')}
-          className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg shadow-red-100/50 border border-gray-100 active:scale-90 transition-all"
+          className="w-[60px] h-[60px] bg-white rounded-full flex items-center justify-center shadow-lg shadow-red-100/50 border border-gray-100 active:scale-90 transition-all"
         >
-          <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+          <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
 
-        {/* Info / Star button */}
+        {/* Rewind (verified only) */}
         <button
-          onClick={() => { onShowDetails(currentProfile); }}
-          className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg shadow-blue-100/50 border border-gray-100 active:scale-90 transition-all"
+          onClick={handleRewind}
+          disabled={!lastSwipe || !currentUser.verified}
+          className={`w-11 h-11 rounded-full flex items-center justify-center shadow-md border border-gray-100 active:scale-90 transition-all ${
+            lastSwipe && currentUser.verified ? 'bg-white shadow-yellow-100/50' : 'bg-gray-50 opacity-40'
+          }`}
         >
-          <svg className="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+          </svg>
+        </button>
+
+        {/* Info / Star */}
+        <button
+          onClick={() => onShowDetails(currentProfile)}
+          className="w-11 h-11 bg-white rounded-full flex items-center justify-center shadow-md shadow-blue-100/50 border border-gray-100 active:scale-90 transition-all"
+        >
+          <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
           </svg>
         </button>
 
-        {/* Like / Connect button — shows lock if not verified */}
+        {/* Like / Lock */}
         <button
           onClick={() => { if (!isRequested) goNext('right'); }}
           disabled={isRequested}
-          className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg border border-gray-100 active:scale-90 transition-all ${
+          className={`w-[60px] h-[60px] rounded-full flex items-center justify-center shadow-lg border border-gray-100 active:scale-90 transition-all ${
             isRequested ? 'bg-gray-100 shadow-none' : !currentUser.verified ? 'bg-white shadow-orange-100/50' : 'bg-white shadow-green-100/50'
           }`}
         >
@@ -418,6 +514,68 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
           )}
         </button>
       </div>
+
+      {/* ─── Verify Profile Dialog ─────────────────────────────── */}
+      {showVerifyDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowVerifyDialog(false)} />
+          <div className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl text-center">
+            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-black uppercase tracking-tighter mb-2 text-gray-800">Verification Required</h3>
+            <p className="text-sm font-medium text-gray-500 mb-8 leading-relaxed">
+              Only verified users can send likes. Complete your profile verification to start matching.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => { setShowVerifyDialog(false); /* navigate to verification handled by parent */ }}
+                className="w-full py-4 bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-transform"
+              >
+                Verify Profile
+              </button>
+              <button
+                onClick={() => setShowVerifyDialog(false)}
+                className="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl font-black uppercase tracking-widest text-[10px]"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Daily Limit Dialog ────────────────────────────────── */}
+      {showLimitDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowLimitDialog(false)} />
+          <div className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl text-center">
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-3xl">🔥</span>
+            </div>
+            <h3 className="text-xl font-black uppercase tracking-tighter mb-2 text-gray-800">Out of Likes</h3>
+            <p className="text-sm font-medium text-gray-500 mb-8 leading-relaxed">
+              You've used all {DAILY_LIKE_LIMIT} likes for today. Come back tomorrow or upgrade for unlimited likes!
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => setShowLimitDialog(false)}
+                className="w-full py-4 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-transform"
+              >
+                Upgrade to Pro
+              </button>
+              <button
+                onClick={() => setShowLimitDialog(false)}
+                className="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl font-black uppercase tracking-widest text-[10px]"
+              >
+                Maybe later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Profile } from '../types';
 
@@ -23,11 +23,12 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [hasSetup, setHasSetup] = useState(false);
+  const [blurred, setBlurred] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
 
-    // Check if target user has gallery setup
     const { data: setup } = await supabase
       .from('private_gallery_setup')
       .select('id')
@@ -35,7 +36,6 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
       .maybeSingle();
     setHasSetup(!!setup);
 
-    // Fetch content
     const { data: content } = await supabase
       .from('private_gallery_content')
       .select('*')
@@ -43,7 +43,6 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
       .order('created_at', { ascending: false });
     setItems(content || []);
 
-    // Fetch current user's purchases for this gallery
     const { data: purchases } = await supabase
       .from('private_gallery_purchases')
       .select('content_id')
@@ -55,6 +54,30 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
   }, [targetProfile.id, currentUserId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ─── Screenshot / Screen Recording Prevention ─────────────
+  useEffect(() => {
+    // Blur content when tab loses focus (screen recording / screenshot detection)
+    const handleVisibility = () => {
+      setBlurred(document.hidden);
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Prevent keyboard shortcuts for screenshots
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'PrintScreen' || (e.metaKey && e.shiftKey && (e.key === '3' || e.key === '4' || e.key === '5'))) {
+        e.preventDefault();
+        setBlurred(true);
+        setTimeout(() => setBlurred(false), 1500);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const handlePay = async (item: GalleryContent) => {
     setProcessingId(item.id);
@@ -72,6 +95,9 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
     setProcessingId(null);
   };
 
+  // Prevent right-click / long-press on media
+  const preventContext = (e: React.MouseEvent) => { e.preventDefault(); };
+
   if (loading) return (
     <div className="h-full bg-[#fdf8f5] flex items-center justify-center">
       <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
@@ -79,7 +105,12 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
   );
 
   return (
-    <div className="h-full flex flex-col bg-[#fdf8f5] overflow-y-auto pb-40">
+    <div
+      ref={containerRef}
+      className="h-full flex flex-col bg-[#fdf8f5] overflow-y-auto pb-40"
+      style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+      onContextMenu={preventContext}
+    >
       <header className="p-6 bg-white flex items-center gap-4 sticky top-0 z-40 shadow-sm border-b border-orange-100">
         <button onClick={onBack} className="p-2 -ml-2 text-gray-400 active:scale-75 transition-transform">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
@@ -89,6 +120,19 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
           <p className="text-[9px] font-black text-purple-500 uppercase tracking-widest mt-0.5">@{targetProfile.username}'s collection</p>
         </div>
       </header>
+
+      {/* Blur overlay when tab loses focus */}
+      {blurred && (
+        <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
+            </div>
+            <p className="text-white font-black text-sm uppercase tracking-widest">Content Protected</p>
+            <p className="text-white/50 text-xs mt-2">Return to the app to view</p>
+          </div>
+        </div>
+      )}
 
       <div className="p-6">
         {!hasSetup || items.length === 0 ? (
@@ -103,20 +147,30 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
               const isPaid = purchasedIds.has(item.id);
               return (
                 <div key={item.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-orange-50">
-                  <div className="relative aspect-[16/9] bg-gray-100">
+                  <div className="relative aspect-[16/9] bg-gray-100" onContextMenu={preventContext}>
                     {item.type === 'image' ? (
                       <img
                         src={item.file_url}
                         className={`w-full h-full object-cover transition-all duration-700 ${!isPaid ? 'blur-[40px] brightness-50 scale-110' : ''}`}
                         alt={item.head_note}
+                        draggable={false}
+                        style={{ pointerEvents: 'none', WebkitUserDrag: 'none' } as React.CSSProperties}
                       />
                     ) : (
                       <video
                         src={item.file_url}
                         className={`w-full h-full object-cover transition-all duration-700 ${!isPaid ? 'blur-[40px] brightness-50 scale-110' : ''}`}
                         controls={isPaid}
+                        controlsList="nodownload noremoteplayback"
+                        disablePictureInPicture
+                        playsInline
                         muted={!isPaid}
+                        onContextMenu={preventContext}
                       />
+                    )}
+                    {/* Transparent shield overlay to intercept screenshot tools on paid content */}
+                    {isPaid && (
+                      <div className="absolute inset-0 z-10" style={{ pointerEvents: 'none' }} />
                     )}
                     {!isPaid && (
                       <div className="absolute inset-0 flex items-center justify-center">
@@ -137,10 +191,8 @@ const PrivateGalleryView: React.FC<PrivateGalleryViewProps> = ({ targetProfile, 
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-purple-600">₹{item.amount}</span>
                       {isPaid ? (
-                        <button
-                          className="px-6 py-2 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest"
-                        >
-                          View
+                        <button className="px-6 py-2 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">
+                          Unlocked
                         </button>
                       ) : (
                         <button

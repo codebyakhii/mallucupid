@@ -280,7 +280,7 @@ const App: React.FC = () => {
       );
       case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} />;
       case 'userDetails': return selectedProfile && currentUser && (
-        <UserDetails profile={allUsers.find(u => u.id === selectedProfile.id) || selectedProfile} currentUserId={currentUser.id} onBack={() => setView('discover')}
+        <UserDetails profile={allUsers.find(u => u.id === selectedProfile.id) || selectedProfile} currentUser={currentUser} currentUserId={currentUser.id} onBack={() => setView('discover')}
           onOpenPrivateGallery={() => setView('privateGalleryView')}
           onChat={() => setView('chat')}
           isPro={isPro} onGetPro={handlePurchasePro} onConnectionChange={() => refreshConnectionData()} />

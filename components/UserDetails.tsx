@@ -7,8 +7,7 @@ interface UserDetailsProps {
   profile: Profile;
   currentUserId: string;
   onBack: () => void;
-  onOpenSecretGallery: () => void;
-  onOpenExclusiveRoom: () => void;
+  onOpenPrivateGallery: () => void;
   onChat: () => void;
   isPro: boolean;
   onGetPro: () => void;
@@ -16,7 +15,7 @@ interface UserDetailsProps {
 }
 
 const UserDetails: React.FC<UserDetailsProps> = ({
-  profile, currentUserId, onBack, onOpenSecretGallery, onOpenExclusiveRoom, onChat, isPro, onGetPro, onConnectionChange
+  profile, currentUserId, onBack, onOpenPrivateGallery, onChat, isPro, onGetPro, onConnectionChange
 }) => {
   const [imgIdx, setImgIdx] = useState(0);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
@@ -193,10 +192,8 @@ const UserDetails: React.FC<UserDetailsProps> = ({
           >
             {isPro ? 'Chat now' : 'Chat (Pro only)'}
           </button>
-          <button onClick={onOpenSecretGallery} className="flex-1 py-4 bg-purple-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-95 transition-transform">Secret gallery</button>
+          <button onClick={onOpenPrivateGallery} className="flex-1 py-4 bg-purple-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-95 transition-transform">Private gallery</button>
         </div>
-
-        <button onClick={onOpenExclusiveRoom} className="w-full py-5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-xl active:scale-[0.98] transition-all">Exclusive room</button>
 
         <div>
           <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 px-1">Biography</h3>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { View, Profile, PurchaseRecord, SubscriptionRecord, Earning, WithdrawalRequest, ProConfig } from './types';
+import { View, Profile, PurchaseRecord, Earning, WithdrawalRequest, ProConfig } from './types';
 import { LANDING_BG } from './constants';
 import { supabase } from './lib/supabase';
 import { loginWithEmail, fetchUserProfile, fetchAllProfiles, signOut, getCurrentSession } from './lib/auth';
@@ -13,10 +13,8 @@ import UserDetails from './components/UserDetails';
 import FriendsPage from './components/FriendsPage';
 import AlertsPage from './components/AlertsPage';
 import EditProfile from './components/EditProfile';
-import SecretGallery from './components/SecretGallery';
-import SecretGalleryView from './components/SecretGalleryView';
-import ExclusiveRoomPage from './components/ExclusiveRoom';
-import ExclusiveRoomView from './components/ExclusiveRoomView';
+import PrivateGallery from './components/PrivateGallery';
+import PrivateGalleryView from './components/PrivateGalleryView';
 import EarningsPage from './components/EarningsPage';
 import VerificationPage from './components/VerificationPage';
 import BlockedUsersPage from './components/BlockedUsersPage';
@@ -35,8 +33,6 @@ const App: React.FC = () => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   
   const [proConfig, setProConfig] = useState<ProConfig>({ price: 99, duration: 30 });
-  const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
-  const [subscriptions, setSubscriptions] = useState<SubscriptionRecord[]>([]);
   const [blockedIds, setBlockedIds] = useState<string[]>([]);
   const [activeRequests, setActiveRequests] = useState<string[]>([]);
   const [linkedProfiles, setLinkedProfiles] = useState<Profile[]>([]);
@@ -276,7 +272,7 @@ const App: React.FC = () => {
       case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} />;
       case 'userDetails': return selectedProfile && currentUser && (
         <UserDetails profile={allUsers.find(u => u.id === selectedProfile.id) || selectedProfile} currentUserId={currentUser.id} onBack={() => setView('discover')}
-          onOpenSecretGallery={() => setView('secretGalleryView')} onOpenExclusiveRoom={() => setView('exclusiveRoomView')}
+          onOpenPrivateGallery={() => setView('privateGalleryView')}
           onChat={() => setView('chat')}
           isPro={isPro} onGetPro={handlePurchasePro} onConnectionChange={() => refreshConnectionData()} />
       );
@@ -288,15 +284,13 @@ const App: React.FC = () => {
       case 'earnings': return currentUser && <EarningsPage onBack={() => setView('profile')} earnings={earnings} onRequestWithdrawal={handleRequestWithdrawal} pendingWithdrawals={withdrawals} userProfile={currentUser} />;
       case 'bankAccount': return <BankAccountPage onBack={() => setView('profile')} />;
       case 'blockedUsers': return currentUser && <BlockedUsersPage currentUserId={currentUser.id} onBack={() => setView('profile')} allUsers={allUsers} />;
-      case 'secretGallery': return currentUser && <SecretGallery isOwner={true} onBack={() => setView('profile')} targetProfile={currentUser} />;
-      case 'exclusiveRoom': return currentUser && <ExclusiveRoomPage onBack={() => setView('profile')} />;
-      case 'secretGalleryView': return selectedProfile && <SecretGalleryView targetProfile={selectedProfile} onBack={() => setView('userDetails')} purchases={purchases} onPurchase={(id) => setPurchases(prev => [...prev, { contentId: id, userId: currentUser?.id || '' }])} />;
-      case 'exclusiveRoomView': return selectedProfile && <ExclusiveRoomView targetProfile={selectedProfile} onBack={() => setView('userDetails')} subscriptions={subscriptions} onSubscribe={(id) => setSubscriptions(prev => [...prev, { roomId: id, userId: currentUser?.id || '', expiry: Date.now() + 86400000 * 30 }])} />;
+      case 'privateGallery': return currentUser && <PrivateGallery currentUser={currentUser} onBack={() => setView('profile')} />;
+      case 'privateGalleryView': return selectedProfile && currentUser && <PrivateGalleryView targetProfile={selectedProfile} currentUserId={currentUser.id} onBack={() => setView('userDetails')} />;
       default: return null;
     }
   };
 
-  const mainViews = ['discover', 'friends', 'notifications', 'profile', 'inbox'];
+  const mainViews = ['discover', 'friends', 'privateGallery', 'notifications', 'profile', 'inbox'];
   const showNav = mainViews.includes(view);
 
   const navItems = [
@@ -325,13 +319,13 @@ const App: React.FC = () => {
       ),
     },
     {
-      id: 'inbox',
-      label: 'Chat',
+      id: 'privateGallery',
+      label: 'Gallery',
       icon: (active: boolean) => (
         <svg className="w-6 h-6" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={active ? 0 : 1.8}>
           {active
-            ? <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
-            : <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443h2.387c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+            ? <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
+            : <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V4.5a1.5 1.5 0 00-1.5-1.5H3.75a1.5 1.5 0 00-1.5 1.5v15a1.5 1.5 0 001.5 1.5zM12.75 8.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
           }
         </svg>
       ),
@@ -382,7 +376,14 @@ const App: React.FC = () => {
             </div>
             <span className="text-lg font-black bg-gradient-to-r from-[#FF4458] to-[#FF7854] bg-clip-text text-transparent">mallucupid</span>
           </div>
-          <div className="w-9 h-9" />
+          <button onClick={() => setView('inbox')} className={`w-9 h-9 flex items-center justify-center transition-transform active:scale-90 ${view === 'inbox' ? 'text-[#FF4458]' : 'text-gray-400'}`}>
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill={view === 'inbox' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={view === 'inbox' ? 0 : 2}>
+              {view === 'inbox'
+                ? <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+                : <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443h2.387c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+              }
+            </svg>
+          </button>
         </header>
       )}
 

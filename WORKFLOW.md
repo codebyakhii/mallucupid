@@ -66,6 +66,7 @@
 │   ├── BankAccountPage.tsx   Bank details form
 │   ├── BlockedUsersPage.tsx  Manage blocked users
 │   ├── VerificationPage.tsx  KYC live photo verification
+│   ├── VerifyAuthorityPage.tsx Admin security question verification
 │   └── AdminDashboard.tsx    6-tab admin control panel
 └── supabase/
     ├── migration.sql         Database schema + RLS policies
@@ -156,6 +157,20 @@ as $$ select exists (select 1 from public.profiles where id = auth.uid() and rol
 ```
 This prevents infinite recursion in admin RLS policies.
 
+### Admin Security Questions Table
+```sql
+create table public.admin_security_questions (
+  id serial primary key,
+  question_order integer not null unique,
+  question text not null,
+  answer text not null,
+  created_at timestamptz default now()
+);
+-- RLS: Only admin role can SELECT (questions + answers)
+-- Verification done via server-side RPC function verify_admin_security()
+-- Answers never sent to frontend; function compares server-side and returns boolean
+```
+
 ### Storage
 - **Bucket**: `profile-images` (public read)
 - **Upload path**: `profile-images/{userId}/{timestamp}.{ext}`
@@ -205,23 +220,36 @@ This prevents infinite recursion in admin RLS policies.
    - Shows success screen (2 seconds)
    - Calls `onSuccess()` → App fetches session → fetches profile → navigates to discover
 
-### 3b. Login
+### 3b. Login (Role-Based)
 
 1. User enters email and password
 2. On "Login": calls `loginWithEmail(email, password)`
 3. App calls `fetchUserProfile(user.id)`
 4. If profile not found → error "Profile not found. Please sign up first."
 5. If status is "blocked" → error "Your account has been suspended."
-6. Calls `fetchAllProfiles()` to populate discover
-7. If role is "admin" → navigates to `adminDashboard`
-8. Otherwise → navigates to `discover`
+6. **Role check** (pure backend logic, no UI indicator):
+   - If role is `admin` → navigates to `verifyAuthority` (security questions page)
+   - If role is `user` → loads all profiles + connections → navigates to `discover`
+   - If role doesn't match `admin` or `user` → signs out → error "Email is not matching to any roles, contact admin"
+
+### 3b-2. Admin Security Verification (`VerifyAuthorityPage`)
+
+1. After admin login, navigates to `/verify-authority`
+2. Fetches questions from `admin_security_questions` table (questions only, not answers)
+3. Admin must answer all 5 security questions
+4. Answers validated server-side via `verify_admin_security()` Postgres RPC function (SECURITY DEFINER)
+5. On success → loads all profiles → navigates to `adminDashboard`
+6. On failure → 3 attempts max, then auto-logout
+7. Answers displayed as password fields (masked) for extra security
+8. Back button triggers logout
 
 ### 3c. Session Restore (App Mount)
 
 1. On App.tsx mount: calls `getCurrentSession()`
 2. If session exists: fetches profile + all users
-3. Routes to `adminDashboard` or `discover` based on role
-4. Listens to `supabase.auth.onAuthStateChange` for sign-out events
+3. If admin on `/admin` URL → stays on `adminDashboard`; otherwise → `verifyAuthority`
+4. If user → restores URL view or defaults to `discover`
+5. Listens to `supabase.auth.onAuthStateChange` for sign-out events
 
 ### 3d. Forgot Password (3 Steps)
 

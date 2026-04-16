@@ -73,7 +73,7 @@ export interface ProConfig {
   duration: number; // in days
 }
 
-export type View = 'landing' | 'login' | 'signup' | 'forgotPassword' | 'discover' | 'friends' | 'profile' | 'chat' | 'inbox' | 'userDetails' | 'notifications' | 'privateGallery' | 'privateGalleryView' | 'earnings' | 'verification' | 'blockedUsers' | 'adminDashboard' | 'bankAccount' | 'terms' | 'privacy';
+export type View = 'landing' | 'login' | 'signup' | 'forgotPassword' | 'discover' | 'friends' | 'profile' | 'chat' | 'inbox' | 'userDetails' | 'notifications' | 'privateGallery' | 'privateGalleryView' | 'earnings' | 'verification' | 'blockedUsers' | 'adminDashboard' | 'bankAccount' | 'terms' | 'privacy' | 'verifyAuthority';
 
 export interface Notification {
   id: string;

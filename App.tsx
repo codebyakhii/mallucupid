@@ -22,6 +22,7 @@ import ChatPage from './components/ChatPage';
 import InboxPage from './components/InboxPage';
 import AdminDashboard from './components/AdminDashboard';
 import BankAccountPage from './components/BankAccountPage';
+import VerifyAuthorityPage from './components/VerifyAuthorityPage';
 
 // ─── URL ↔ VIEW MAPPING ────────────────────────────────────
 const VIEW_TO_PATH: Record<View, string> = {
@@ -31,11 +32,12 @@ const VIEW_TO_PATH: Record<View, string> = {
   privateGallery: '/gallery', privateGalleryView: '/gallery/view',
   earnings: '/earnings', verification: '/verification', blockedUsers: '/blocked',
   adminDashboard: '/admin', bankAccount: '/bank-account', terms: '/terms', privacy: '/privacy',
+  verifyAuthority: '/verify-authority',
 };
 const PATH_TO_VIEW: Record<string, View> = Object.fromEntries(
   Object.entries(VIEW_TO_PATH).map(([v, p]) => [p, v as View])
 ) as Record<string, View>;
-const LOGGED_IN_VIEWS = new Set<View>(['discover', 'friends', 'profile', 'chat', 'inbox', 'userDetails', 'notifications', 'privateGallery', 'privateGalleryView', 'earnings', 'verification', 'blockedUsers', 'adminDashboard', 'bankAccount']);
+const LOGGED_IN_VIEWS = new Set<View>(['discover', 'friends', 'profile', 'chat', 'inbox', 'userDetails', 'notifications', 'privateGallery', 'privateGalleryView', 'earnings', 'verification', 'blockedUsers', 'adminDashboard', 'bankAccount', 'verifyAuthority']);
 
 function getViewFromPath(): View {
   const path = window.location.pathname;
@@ -120,7 +122,12 @@ const App: React.FC = () => {
             // Restore view from URL if it's a logged-in view, else default
             const urlView = getViewFromPath();
             if (profile.role === 'admin') {
-              setView('adminDashboard');
+              // Admin: keep verifyAuthority or adminDashboard from URL
+              if (urlView === 'adminDashboard') {
+                setViewRaw('adminDashboard');
+              } else {
+                setView('verifyAuthority');
+              }
             } else if (LOGGED_IN_VIEWS.has(urlView)) {
               setViewRaw(urlView); // don't push state again
             } else {
@@ -246,13 +253,28 @@ const App: React.FC = () => {
 
       if (profile.status === 'blocked') return { success: false, error: 'Your account has been suspended.' };
 
+      // Role-based login routing — pure backend check
+      const role = profile.role || 'user';
+      if (role !== 'admin' && role !== 'user') {
+        await signOut();
+        return { success: false, error: 'Email is not matching to any roles, contact admin' };
+      }
+
       setCurrentUser(profile);
       // Update last_active on login
       supabase.from('profiles').update({ last_active: new Date().toISOString() }).eq('id', authData.user.id).then();
+
+      if (role === 'admin') {
+        // Admin goes to security verification first
+        setView('verifyAuthority');
+        return { success: true };
+      }
+
+      // Normal user flow
       const users = await fetchAllProfiles();
       setAllUsers(users);
       await refreshConnectionData(authData.user.id);
-      setView(profile.role === 'admin' ? 'adminDashboard' : 'discover');
+      setView('discover');
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message || 'Invalid email or password' };
@@ -338,6 +360,17 @@ const App: React.FC = () => {
         setView('login');
       }} />;
       case 'forgotPassword': return <ForgotPasswordFlow onBack={() => setView('login')} onSuccess={() => setView('login')} />;
+      case 'verifyAuthority': return currentUser && (
+        <VerifyAuthorityPage
+          currentUser={currentUser}
+          onVerified={async () => {
+            const users = await fetchAllProfiles();
+            setAllUsers(users);
+            setView('adminDashboard');
+          }}
+          onBack={handleLogout}
+        />
+      );
       case 'adminDashboard': return (
         <AdminDashboard 
           onBack={() => setShowLogoutConfirm(true)} 

@@ -59,6 +59,7 @@ export interface Profile {
   showAge: boolean;
   showDistance: boolean;
   showOrientation: boolean;
+  globalDiscovery: boolean;
   role?: UserRole;
   status?: 'active' | 'blocked';
   bankInfo?: BankInfo;
@@ -134,6 +135,18 @@ export interface Earning {
   description: string;
   related_id: string | null;
   created_at: string;
+}
+
+export interface ProPlan {
+  id: string;
+  name: string;
+  label: string;
+  price: number;
+  durationDays: number;
+  description: string;
+  badgeText: string;
+  isPopular: boolean;
+  sortOrder: number;
 }
 
 

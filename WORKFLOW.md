@@ -1,7 +1,7 @@
 # MalluCupid Application Workflow
 
-**Last updated**: March 25, 2026  
-**Stack**: React 19.2.3 + TypeScript + Vite 6 + Tailwind CSS (CDN) + Supabase  
+**Last updated**: April 16, 2026  
+**Stack**: React 19.2.3 + TypeScript + Vite 6 + Tailwind CSS v4 (@tailwindcss/vite) + Supabase  
 **Hosting**: Vercel (auto-deploy from GitHub main branch)  
 **Domain**: mallucupid.com / www.mallucupid.com  
 **Email**: Resend SMTP (smtp.resend.com, port 465)
@@ -455,10 +455,15 @@ Tinder-inspired full edit profile page with 13 sections.
 7. **Work & Education** — job title, company, education text inputs
 8. **Relationship Goals** — single-select pills (5 options)
 9. **Location Settings** — search input with Nominatim autocomplete + GPS auto-detect button
-10. **Discovery Settings** — show me selector, age range dual slider, distance slider
+10. **Discovery Settings** — show me selector, age range dual slider, distance slider, global discovery toggle (Pro only)
 11. **Verification** — status badge + verify button (links to verification page)
 12. **Privacy (Visibility Controls)** — toggle switches for show age, distance, orientation
 13. **Account Actions** — nav links (blocked users, bank account, earnings) + logout + delete account
+
+### Pro Plan Section (between Location & Discovery)
+- **Free users**: dark card with gold accent showing all Pro features + plan previews + "Upgrade to Pro" CTA
+- **Pro users**: amber card showing "Pro member" badge + expiry date
+- Plans fetched from `pro_plans` table (no hardcoding)
 
 ### Database Fields Used
 - Basic: full_name, username, bio, gender, orientation, pronouns, relationship_goal
@@ -467,8 +472,9 @@ Tinder-inspired full edit profile page with 13 sections.
 - Lifestyle: lifestyle jsonb {drinking, smoking, workout, pets, diet}
 - Work: job_title, company, education, occupation
 - Location: location text, latitude float, longitude float
-- Discovery: show_me text, age_min int, age_max int, max_distance int
+- Discovery: show_me text, age_min int, age_max int, max_distance int, global_discovery bool
 - Privacy: show_age bool, show_distance bool, show_orientation bool
+- Pro: pro_expiry timestamptz
 
 ### UI Design
 - Background: gradient from light pink to white
@@ -556,7 +562,7 @@ Tinder-inspired full edit profile page with 13 sections.
 ### Header (visible on main tabs)
 - Left: logout button (gray icon)
 - Center: MalluCupid logo (gradient red-orange "M" badge + brand text)
-- Right: empty spacer
+- Right: inbox button with unread message badge (red circle, 99+ cap)
 
 ### Bottom Navigation (5 tabs)
 | Tab | View | Icon | Active Color |
@@ -570,6 +576,20 @@ Tinder-inspired full edit profile page with 13 sections.
 - Active tab: filled icon + colored text (#FF4458)
 - Inactive tab: outlined icon + gray text
 - Profile tab shows user's actual photo if available
+- Alerts tab shows unread notification badge (red circle, 99+ cap)
+
+### Pro Plans Modal (Tinder-style bottom sheet)
+- Gold star header with "Upgrade to Pro" title
+- Features checklist (5 items: unlimited likes, unlimited messages, rewind, global discovery, Pro badge)
+- 3 plan cards fetched from `pro_plans` table (Weekly ₹59, Monthly ₹149, Quarterly ₹299)
+- Selected plan highlighted with amber border, shows per-day price
+- CTA button with loading spinner, "Cancel anytime" note
+- Triggered from: like limit paywall, rewind popup, profile Pro section, chat message limit
+
+### Rewind Pro Popup
+- Yellow rewind icon with "Want to rewind?" message
+- "Upgrade to Pro" button opens Pro Plans modal
+- Shown when free users tap rewind on Discover
 
 ### Desktop Blocker
 - If screen width > 1024px, shows DesktopBlocker component
@@ -586,7 +606,7 @@ Tinder-inspired full edit profile page with 13 sections.
 - Header/button gradient: #FF4458 → #FF7854
 - Success/connect: #006400 (dark green)
 - Reject/block: #8B0000 (dark red)
-- Pro badge: #FFD700 (gold)
+- Pro badge/plans: #FFD700 (gold), amber gradients
 - Chat own message: red background
 - Chat other message: white background
 
@@ -635,6 +655,7 @@ Tinder-inspired full edit profile page with 13 sections.
 | `WithdrawalRequest` | Payout request |
 | `UserReport` | User report |
 | `ProConfig` | Admin Pro settings |
+| `ProPlan` | Pro plan from DB (name, price, duration) |
 | `SecretContent` | Paid content item |
 | `Gender`, `LookingFor`, `Orientation`, `RelationshipGoal` | Enum types |
 

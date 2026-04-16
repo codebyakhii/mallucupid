@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Profile, ProConfig } from './types';
+import { View, Profile, ProConfig, ProPlan } from './types';
 import { LANDING_BG } from './constants';
 import { supabase } from './lib/supabase';
 import { loginWithEmail, fetchUserProfile, fetchAllProfiles, signOut, getCurrentSession } from './lib/auth';
@@ -60,6 +60,13 @@ const App: React.FC = () => {
   const [linkedProfiles, setLinkedProfiles] = useState<Profile[]>([]);
   const [dailyLikeCount, setDailyLikeCount] = useState(0);
   const [showLikeLimit, setShowLikeLimit] = useState(false);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [proPlans, setProPlans] = useState<ProPlan[]>([]);
+  const [showProPlans, setShowProPlans] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<ProPlan | null>(null);
+  const [purchasingPro, setPurchasingPro] = useState(false);
+  const [showRewindPro, setShowRewindPro] = useState(false);
   const suppressPopState = React.useRef(false);
   const DAILY_LIKE_LIMIT = 100;
 
@@ -125,6 +132,15 @@ const App: React.FC = () => {
             // Fetch daily like count for free users
             const { data: likeData } = await supabase.rpc('get_daily_like_count', { p_user_id: session.user.id });
             if (typeof likeData === 'number') setDailyLikeCount(likeData);
+            // Fetch pro plans
+            const { data: plans } = await supabase.from('pro_plans').select('*').eq('active', true).order('sort_order');
+            if (plans) setProPlans(plans.map((p: any) => ({ id: p.id, name: p.name, label: p.label, price: p.price, durationDays: p.duration_days, description: p.description, badgeText: p.badge_text, isPopular: p.is_popular, sortOrder: p.sort_order })));
+            // Fetch unread message count
+            const { count: msgCount } = await supabase.from('messages').select('id', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('status', 'sent').eq('deleted_for_receiver', false);
+            if (typeof msgCount === 'number') setUnreadMessageCount(msgCount);
+            // Fetch pending notification count
+            const { count: notifCount } = await supabase.from('connection_requests').select('id', { count: 'exact', head: true }).eq('to_id', session.user.id).eq('status', 'pending');
+            if (typeof notifCount === 'number') setUnreadNotificationCount(notifCount);
             // Restore view from URL if it's a logged-in view, else default
             const urlView = getViewFromPath();
             if (profile.role === 'admin') {
@@ -223,15 +239,49 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [currentUser?.id]);
 
-  const handlePurchasePro = async () => {
+  // ─── REALTIME: unread message + notification badge counts ──
+  useEffect(() => {
     if (!currentUser) return;
-    const expiry = Date.now() + (proConfig.duration * 24 * 60 * 60 * 1000);
-    const { error } = await supabase.from('profiles').update({ pro_expiry: new Date(expiry).toISOString() }).eq('id', currentUser.id);
-    if (error) { console.error('Pro purchase error:', error); alert('Failed to activate Pro. Please try again.'); return; }
-    const updated = { ...currentUser, proExpiry: expiry };
-    setCurrentUser(updated);
-    setAllUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
-    alert("Congratulations! You are now a Pro Member.");
+    const uid = currentUser.id;
+
+    const msgChannel = supabase
+      .channel('unread-msgs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `receiver_id=eq.${uid}` }, async () => {
+        const { count } = await supabase.from('messages').select('id', { count: 'exact', head: true }).eq('receiver_id', uid).eq('status', 'sent').eq('deleted_for_receiver', false);
+        if (typeof count === 'number') setUnreadMessageCount(count);
+      })
+      .subscribe();
+
+    const notifChannel = supabase
+      .channel('unread-notifs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests', filter: `to_id=eq.${uid}` }, async () => {
+        const { count } = await supabase.from('connection_requests').select('id', { count: 'exact', head: true }).eq('to_id', uid).eq('status', 'pending');
+        if (typeof count === 'number') setUnreadNotificationCount(count);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(msgChannel);
+      supabase.removeChannel(notifChannel);
+    };
+  }, [currentUser?.id]);
+
+  const handlePurchasePro = async (plan?: ProPlan) => {
+    if (!currentUser) return;
+    const duration = plan ? plan.durationDays : proConfig.duration;
+    setPurchasingPro(true);
+    try {
+      const expiry = Date.now() + (duration * 24 * 60 * 60 * 1000);
+      const { error } = await supabase.from('profiles').update({ pro_expiry: new Date(expiry).toISOString() }).eq('id', currentUser.id);
+      if (error) { console.error('Pro purchase error:', error); alert('Failed to activate Pro. Please try again.'); return; }
+      const updated = { ...currentUser, proExpiry: expiry };
+      setCurrentUser(updated);
+      setAllUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+      setShowProPlans(false);
+      setSelectedPlan(null);
+    } finally {
+      setPurchasingPro(false);
+    }
   };
 
   const handleUpdateProConfig = (newConfig: ProConfig) => setProConfig(newConfig);
@@ -402,18 +452,18 @@ const App: React.FC = () => {
           onUpdateProConfig={handleUpdateProConfig}
         />
       );
-      case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} isPro={isPro} dailyLikeCount={dailyLikeCount} dailyLikeLimit={DAILY_LIKE_LIMIT} />;
+      case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} isPro={isPro} dailyLikeCount={dailyLikeCount} dailyLikeLimit={DAILY_LIKE_LIMIT} onRewindPro={() => setShowRewindPro(true)} />;
       case 'userDetails': return selectedProfile && currentUser && (
         <UserDetails profile={allUsers.find(u => u.id === selectedProfile.id) || selectedProfile} currentUser={currentUser} currentUserId={currentUser.id} onBack={() => setView('discover')}
           onOpenPrivateGallery={() => setView('privateGalleryView')}
           onChat={() => setView('chat')}
-          isPro={isPro} onGetPro={handlePurchasePro} onConnectionChange={() => refreshConnectionData()} />
+          isPro={isPro} onGetPro={() => setShowProPlans(true)} onConnectionChange={() => refreshConnectionData()} />
       );
-      case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} isPro={isPro} onGetPro={handlePurchasePro} proPrice={proConfig.price} />;
-      case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => refreshConnectionData()} isPro={isPro} onGetPro={handlePurchasePro} />;
+      case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} isPro={isPro} onGetPro={() => setShowProPlans(true)} proPrice={proConfig.price} />;
+      case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => refreshConnectionData()} isPro={isPro} onGetPro={() => setShowProPlans(true)} />;
       case 'friends': return currentUser && <FriendsPage currentUserId={currentUser.id} allUsers={allUsers} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} onConnectionChange={() => refreshConnectionData()} />;
       case 'notifications': return currentUser && <AlertsPage currentUserId={currentUser.id} isVerified={currentUser.verified} allUsers={allUsers} onConnectionAccepted={() => refreshConnectionData()} />;
-      case 'profile': return currentUser && <EditProfile userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} onLogout={handleLogout} />;
+      case 'profile': return currentUser && <EditProfile userProfile={currentUser} onUpdate={handleProfileUpdate} onNavigate={navigateToView} onLogout={handleLogout} isPro={isPro} proPlans={proPlans} onShowProPlans={() => setShowProPlans(true)} />;
       case 'earnings': return currentUser && <EarningsPage onBack={() => setView('profile')} currentUser={currentUser} />;
       case 'bankAccount': return currentUser && <BankAccountPage onBack={() => setView('profile')} currentUser={currentUser} />;
       case 'blockedUsers': return currentUser && <BlockedUsersPage currentUserId={currentUser.id} onBack={() => setView('profile')} allUsers={allUsers} />;
@@ -510,7 +560,12 @@ const App: React.FC = () => {
             </div>
             <span className="text-lg font-black bg-gradient-to-r from-[#FF4458] to-[#FF7854] bg-clip-text text-transparent">mallucupid</span>
           </div>
-          <button onClick={() => setView('inbox')} className={`w-9 h-9 flex items-center justify-center transition-transform active:scale-90 ${view === 'inbox' ? 'text-[#FF4458]' : 'text-gray-400'}`}>
+          <button onClick={() => setView('inbox')} className={`w-9 h-9 flex items-center justify-center transition-transform active:scale-90 relative ${view === 'inbox' ? 'text-[#FF4458]' : 'text-gray-400'}`}>
+            {unreadMessageCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-[#FF4458] text-white text-[9px] font-black rounded-full flex items-center justify-center px-1 z-10">
+                {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+              </span>
+            )}
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill={view === 'inbox' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={view === 'inbox' ? 0 : 2}>
               {view === 'inbox'
                 ? <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
@@ -537,15 +592,23 @@ const App: React.FC = () => {
           <div className="flex justify-around items-center h-16 max-w-md mx-auto">
             {navItems.map(item => {
               const isActive = view === item.id;
+              const badgeCount = item.id === 'notifications' ? unreadNotificationCount : 0;
               return (
                 <button
                   key={item.id}
                   onClick={() => setView(item.id as View)}
-                  className={`flex flex-col items-center justify-center gap-0.5 w-16 h-full transition-colors active:scale-90 ${
+                  className={`flex flex-col items-center justify-center gap-0.5 w-16 h-full transition-colors active:scale-90 relative ${
                     isActive ? 'text-[#FF4458]' : 'text-gray-400'
                   }`}
                 >
-                  {item.icon(isActive)}
+                  <div className="relative">
+                    {item.icon(isActive)}
+                    {badgeCount > 0 && (
+                      <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 bg-[#FF4458] text-white text-[9px] font-black rounded-full flex items-center justify-center px-1">
+                        {badgeCount > 99 ? '99+' : badgeCount}
+                      </span>
+                    )}
+                  </div>
                   <span className={`text-[10px] font-semibold ${isActive ? 'text-[#FF4458]' : 'text-gray-400'}`}>{item.label}</span>
                 </button>
               );
@@ -566,10 +629,118 @@ const App: React.FC = () => {
             <p className="text-sm text-gray-500 mb-1">You've used all {DAILY_LIKE_LIMIT} likes for today.</p>
             <p className="text-sm text-gray-500 mb-6">Upgrade to Pro for unlimited likes every day.</p>
             <div className="space-y-2.5">
-              <button onClick={() => { setShowLikeLimit(false); handlePurchasePro(); }} className="w-full py-3.5 bg-gradient-to-r from-[#FF4458] to-[#FF6B6B] text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg">
+              <button onClick={() => { setShowLikeLimit(false); setShowProPlans(true); }} className="w-full py-3.5 bg-gradient-to-r from-[#FF4458] to-[#FF6B6B] text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg">
                 Get Pro · Unlimited likes
               </button>
               <button onClick={() => setShowLikeLimit(false)} className="w-full py-3.5 bg-gray-50 text-gray-500 rounded-2xl font-bold text-sm active:scale-95 transition-transform">Wait until tomorrow</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── PRO PLANS MODAL (Tinder-style) ─── */}
+      {showProPlans && (
+        <div className="fixed inset-0 z-[300] flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => { setShowProPlans(false); setSelectedPlan(null); }} />
+          <div className="relative bg-white w-full max-w-md rounded-t-3xl shadow-2xl pb-8 animate-[slideUp_0.25s_ease-out] max-h-[90vh] overflow-y-auto">
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mt-3 mb-2" />
+            <button onClick={() => { setShowProPlans(false); setSelectedPlan(null); }} className="absolute top-4 right-4 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 z-10">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+
+            {/* Header */}
+            <div className="text-center px-6 pt-3 pb-6">
+              <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-amber-200/50">
+                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              </div>
+              <h2 className="text-2xl font-black text-gray-900 mb-1">MalluCupid Pro</h2>
+              <p className="text-sm text-gray-500 font-medium">Unlock the full dating experience</p>
+            </div>
+
+            {/* Features */}
+            <div className="px-6 mb-6">
+              <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-4 space-y-3">
+                {[
+                  { icon: '💛', text: 'Unlimited likes every day' },
+                  { icon: '💬', text: 'Unlimited messaging' },
+                  { icon: '🔄', text: 'Rewind your last swipe' },
+                  { icon: '🌍', text: 'Global discovery mode' },
+                  { icon: '⭐', text: 'Pro badge on your profile' },
+                ].map((f, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="text-lg">{f.icon}</span>
+                    <span className="text-sm font-semibold text-gray-700">{f.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Plan Cards */}
+            <div className="px-6 mb-6">
+              <div className="flex gap-3">
+                {proPlans.map(plan => {
+                  const isSelected = selectedPlan?.id === plan.id;
+                  return (
+                    <button
+                      key={plan.id}
+                      onClick={() => setSelectedPlan(plan)}
+                      className={`flex-1 relative rounded-2xl p-4 border-2 transition-all ${
+                        isSelected
+                          ? 'border-amber-500 bg-amber-50 shadow-lg shadow-amber-100/50 scale-[1.02]'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      {plan.badgeText && (
+                        <span className={`absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                          plan.isPopular ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white' : 'bg-gray-800 text-white'
+                        }`}>
+                          {plan.badgeText}
+                        </span>
+                      )}
+                      <p className="text-[13px] font-bold text-gray-800 mt-1">{plan.label}</p>
+                      <p className="text-2xl font-black text-gray-900 mt-1">₹{plan.price}</p>
+                      <p className="text-[10px] font-medium text-gray-400 mt-0.5">
+                        {plan.durationDays === 7 ? '₹' + (plan.price / 7).toFixed(0) + '/day' :
+                         plan.durationDays === 30 ? '₹' + (plan.price / 30).toFixed(0) + '/day' :
+                         '₹' + (plan.price / 90).toFixed(0) + '/day'}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* CTA Button */}
+            <div className="px-6">
+              <button
+                onClick={() => selectedPlan && handlePurchasePro(selectedPlan)}
+                disabled={!selectedPlan || purchasingPro}
+                className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-black uppercase tracking-wider text-sm shadow-xl shadow-amber-200/50 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {purchasingPro && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {purchasingPro ? 'Activating...' : selectedPlan ? `Get Pro · ₹${selectedPlan.price}` : 'Select a plan'}
+              </button>
+              <p className="text-[11px] text-gray-400 text-center mt-3">Cancel anytime. No auto-renewal.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── REWIND PRO POPUP ─── */}
+      {showRewindPro && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-8">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowRewindPro(false)} />
+          <div className="relative bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl text-center">
+            <div className="w-14 h-14 bg-yellow-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-yellow-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Want to rewind?</h3>
+            <p className="text-sm text-gray-500 mb-6">Accidentally swiped left? Upgrade to Pro to undo your last swipe and get another chance.</p>
+            <div className="space-y-2.5">
+              <button onClick={() => { setShowRewindPro(false); setShowProPlans(true); }} className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg">
+                Upgrade to Pro
+              </button>
+              <button onClick={() => setShowRewindPro(false)} className="w-full py-3.5 bg-gray-50 text-gray-500 rounded-2xl font-bold text-sm active:scale-95 transition-transform">Maybe later</button>
             </div>
           </div>
         </div>

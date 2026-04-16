@@ -7,4 +7,4 @@ export const KERALA_LOCATIONS = [
   'Pathanamthitta', 'Idukki', 'Wayanad', 'Kasaragod'
 ];
 
-export const PRO_PLAN_PRICE = 99; // INR
+

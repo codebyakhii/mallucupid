@@ -176,6 +176,7 @@ function mapDbToProfile(row: any): Profile {
     bankInfo: row.bank_info || undefined,
     verificationDocs: row.verification_docs || undefined,
     lastActive: row.last_active || undefined,
+    globalDiscovery: row.global_discovery ?? false,
   };
 }
 

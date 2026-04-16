@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Profile, Lifestyle, View, LookingFor } from '../types';
+import { Profile, Lifestyle, View, LookingFor, ProPlan } from '../types';
 import { uploadProfileImage, updateUserProfile, deleteProfileImage, signOut } from '../lib/auth';
 import { searchPlaces, getCurrentPosition, reverseGeocode } from '../lib/location';
 
@@ -8,6 +8,9 @@ interface EditProfileProps {
   onUpdate: (profile: Profile) => void;
   onNavigate: (view: View) => void;
   onLogout: () => void;
+  isPro?: boolean;
+  proPlans?: ProPlan[];
+  onShowProPlans?: () => void;
 }
 
 // ─── CONSTANTS ──────────────────────────────────────────────────
@@ -134,7 +137,7 @@ const DropdownField: React.FC<{ label: string; value: string; placeholder?: stri
 
 // ─── MAIN COMPONENT ─────────────────────────────────────────────
 
-const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavigate, onLogout }) => {
+const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavigate, onLogout, isPro, proPlans, onShowProPlans }) => {
   // ── State ──
   const [profile, setProfile] = useState<Profile>(() => ({
     ...userProfile,
@@ -329,7 +332,12 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
       {/* ════════ 1. HEADER ════════ */}
       <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
         <div className="flex items-center justify-between px-5 py-3.5">
-          <h1 className="text-[22px] font-bold text-gray-900">Edit profile</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-[22px] font-bold text-gray-900">Edit profile</h1>
+            {isPro && (
+              <span className="px-2 py-0.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[9px] font-black uppercase tracking-wider rounded-full">Pro</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -637,6 +645,77 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
           }} />
         </Section>
 
+        {/* ════════ 9½. PRO PLAN SECTION ════════ */}
+        {!isPro ? (
+          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl shadow-lg overflow-hidden">
+            <div className="p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/30">
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                </div>
+                <div>
+                  <h3 className="text-[15px] font-bold text-white">MalluCupid Pro</h3>
+                  <p className="text-[11px] text-gray-400 font-medium">Unlock all premium features</p>
+                </div>
+              </div>
+              <div className="space-y-2 mb-5">
+                {[
+                  'Unlimited likes every day',
+                  'Unlimited messaging',
+                  'Rewind your last swipe',
+                  'Global discovery mode',
+                  'Pro badge on your profile',
+                ].map((f, i) => (
+                  <div key={i} className="flex items-center gap-2.5">
+                    <svg className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                    <span className="text-[12px] font-medium text-gray-300">{f}</span>
+                  </div>
+                ))}
+              </div>
+              {proPlans && proPlans.length > 0 && (
+                <div className="flex gap-2 mb-4">
+                  {proPlans.map(plan => (
+                    <div key={plan.id} className="flex-1 bg-white/10 rounded-xl p-3 text-center border border-white/5">
+                      {plan.badgeText && (
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider mb-1.5 ${
+                          plan.isPopular ? 'bg-amber-500 text-white' : 'bg-white/20 text-gray-300'
+                        }`}>
+                          {plan.badgeText}
+                        </span>
+                      )}
+                      <p className="text-[11px] font-semibold text-gray-400">{plan.label}</p>
+                      <p className="text-lg font-black text-white">₹{plan.price}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={onShowProPlans}
+                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-all shadow-lg shadow-amber-500/30"
+              >
+                Upgrade to Pro
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl shadow-sm border border-amber-100 overflow-hidden">
+            <div className="p-5 flex items-center gap-4">
+              <div className="w-11 h-11 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-md">
+                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[15px] font-bold text-gray-900">Pro member</h3>
+                  <span className="px-2 py-0.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[8px] font-black uppercase tracking-wider rounded-full">Active</span>
+                </div>
+                <p className="text-[11px] text-gray-500 font-medium mt-0.5">
+                  {userProfile.proExpiry ? `Expires ${new Date(userProfile.proExpiry).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Lifetime'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ════════ 10. DISCOVERY SETTINGS ════════ */}
         <Section title="Discovery settings">
           <div className="space-y-6">
@@ -691,9 +770,34 @@ const EditProfile: React.FC<EditProfileProps> = ({ userProfile, onUpdate, onNavi
                 className="w-full h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-[#FD267A]"
               />
             </div>
+
+            {/* Global Discovery Toggle (Pro only) */}
+            <div className="flex items-center justify-between py-1">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Global discovery</p>
+                <p className="text-[11px] text-gray-400">
+                  {isPro ? 'Be seen by people worldwide' : 'Available for Pro members only'}
+                </p>
+              </div>
+              {isPro ? (
+                <button
+                  onClick={() => updateField('globalDiscovery', !profile.globalDiscovery)}
+                  className={`w-12 h-7 rounded-full transition-colors relative ${profile.globalDiscovery ? 'bg-gradient-to-r from-[#FD267A] to-[#FF6036]' : 'bg-gray-200'}`}
+                >
+                  <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${profile.globalDiscovery ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                </button>
+              ) : (
+                <button
+                  onClick={onShowProPlans}
+                  className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full text-[10px] font-bold active:scale-95 transition-transform"
+                >
+                  Pro
+                </button>
+              )}
+            </div>
           </div>
           <SectionSaveBtn saving={savingSection === 'discovery'} onClick={() => {
-            saveSection('discovery', { show_me: profile.showMe, age_min: profile.ageMin, age_max: profile.ageMax, max_distance: profile.maxDistance });
+            saveSection('discovery', { show_me: profile.showMe, age_min: profile.ageMin, age_max: profile.ageMax, max_distance: profile.maxDistance, global_discovery: profile.globalDiscovery });
           }} />
         </Section>
 

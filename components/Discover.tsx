@@ -13,6 +13,7 @@ interface DiscoverProps {
   isPro?: boolean;
   dailyLikeCount?: number;
   dailyLikeLimit?: number;
+  onRewindPro?: () => void;
 }
 
 
@@ -77,7 +78,7 @@ function isRecentlyActive(profile: Profile): boolean {
   return ms < 15 * 60 * 1000; // active within 15 min
 }
 
-const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDetails, blockedIds, currentUser, activeRequests, isPro, dailyLikeCount = 0, dailyLikeLimit = 100 }) => {
+const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDetails, blockedIds, currentUser, activeRequests, isPro, dailyLikeCount = 0, dailyLikeLimit = 100, onRewindPro }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [dragX, setDragX] = useState(0);
   const [dragY, setDragY] = useState(0);
@@ -399,6 +400,9 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
                   <path d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.64.304 1.24.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
                 </svg>
               )}
+              {currentProfile.proExpiry && currentProfile.proExpiry > Date.now() && (
+                <span className="px-1.5 py-0.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[8px] font-black uppercase tracking-wider rounded-full flex-shrink-0">Pro</span>
+              )}
               {isRecentlyActive(currentProfile) && (
                 <span className="w-2.5 h-2.5 bg-green-400 rounded-full flex-shrink-0 border-[1.5px] border-white shadow-sm" />
               )}
@@ -475,9 +479,12 @@ const Discover: React.FC<DiscoverProps> = ({ users, onLike, onDislike, onShowDet
           </svg>
         </button>
 
-        {/* Rewind (verified only) */}
+        {/* Rewind (Pro only for verified users) */}
         <button
-          onClick={handleRewind}
+          onClick={() => {
+            if (!isPro && onRewindPro) { onRewindPro(); return; }
+            handleRewind();
+          }}
           disabled={!lastSwipe || !currentUser.verified}
           className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md border border-gray-100 active:scale-90 transition-all ${
             lastSwipe && currentUser.verified ? 'bg-white shadow-yellow-100/50' : 'bg-gray-50 opacity-40'

@@ -19,6 +19,10 @@ interface ChatMessage {
   read_at: string | null;
   reply_to_id: string | null;
   created_at: string;
+  deleted_for_sender: boolean;
+  deleted_for_receiver: boolean;
+  deleted_for_everyone: boolean;
+  deleted_at: string | null;
 }
 
 interface ChatPageProps {
@@ -39,11 +43,14 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
   const [viewingOnceMedia, setViewingOnceMedia] = useState<ChatMessage | null>(null);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewingMedia, setViewingMedia] = useState<ChatMessage | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -175,6 +182,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
       media_url: null, media_type: null, is_once_view: false, once_view_opened: false,
       once_view_opened_at: null, once_view_expires_at: null, status: 'sent',
       delivered_at: null, read_at: null, reply_to_id: replyTo?.id || null, created_at: new Date().toISOString(),
+      deleted_for_sender: false, deleted_for_receiver: false, deleted_for_everyone: false, deleted_at: null,
     };
     setMessages((prev) => [...prev, optimistic]);
 
@@ -239,6 +247,45 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
     );
   };
 
+  // ─── DELETE HANDLERS ───────────────────────────
+  const handleDeleteForMe = async (msg: ChatMessage) => {
+    const isSender = msg.sender_id === currentUserId;
+    const field = isSender ? 'deleted_for_sender' : 'deleted_for_receiver';
+    await supabase.from('messages').update({ [field]: true, deleted_at: new Date().toISOString() }).eq('id', msg.id);
+    setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, [field]: true, deleted_at: new Date().toISOString() } : m));
+    setSelectedMessage(null);
+  };
+
+  const handleDeleteForEveryone = async (msg: ChatMessage) => {
+    if (msg.sender_id !== currentUserId) return;
+    await supabase.from('messages').update({ deleted_for_everyone: true, deleted_at: new Date().toISOString() }).eq('id', msg.id);
+    setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, deleted_for_everyone: true, deleted_at: new Date().toISOString() } : m));
+    setSelectedMessage(null);
+  };
+
+  // ─── LONG PRESS HANDLER ───────────────────────
+  const handleTouchStart = (msg: ChatMessage) => {
+    longPressTimerRef.current = setTimeout(() => {
+      setSelectedMessage(msg);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  // ─── VISIBLE MESSAGES (filter deleted) ─────────
+  const visibleMessages = messages.filter((m) => {
+    if (m.deleted_for_everyone) return false;
+    const isSender = m.sender_id === currentUserId;
+    if (isSender && m.deleted_for_sender) return false;
+    if (!isSender && m.deleted_for_receiver) return false;
+    return true;
+  });
+
   // ─── STATUS ICONS ─────────────────────────────
   const StatusIcon: React.FC<{ status: string; isMine: boolean }> = ({ status, isMine }) => {
     if (!isMine) return null;
@@ -269,7 +316,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
 
   const shouldShowDate = (index: number) => {
     if (index === 0) return true;
-    return new Date(messages[index].created_at).toDateString() !== new Date(messages[index - 1].created_at).toDateString();
+    return new Date(visibleMessages[index].created_at).toDateString() !== new Date(visibleMessages[index - 1].created_at).toDateString();
   };
 
   const getReplyMessage = (replyId: string | null) => replyId ? messages.find((m) => m.id === replyId) || null : null;
@@ -328,9 +375,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
               <p className="text-[10px] text-gray-300 mt-2 text-center max-w-[200px]">
                 Messages are private between you and {targetProfile.name.split(' ')[0]}
               </p>
+              <div className="flex items-center gap-1 mt-2">
+                <svg className="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+                <p className="text-[9px] text-gray-300 font-medium">Messages are end-to-end encrypted</p>
+              </div>
             </div>
 
-            {messages.map((m, index) => {
+            {visibleMessages.map((m, index) => {
               const isMine = m.sender_id === currentUserId;
               const replyMsg = getReplyMessage(m.reply_to_id);
               const isOnceView = m.is_once_view;
@@ -373,7 +424,14 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
                     </div>
                   ) : (
                     // Normal message bubble
-                    <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1`} onDoubleClick={() => handleSwipeReply(m)}>
+                    <div
+                      className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1`}
+                      onDoubleClick={() => handleSwipeReply(m)}
+                      onTouchStart={() => handleTouchStart(m)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchMove={handleTouchEnd}
+                      onContextMenu={(e) => { e.preventDefault(); setSelectedMessage(m); }}
+                    >
                       <div className="max-w-[78%]">
                         {replyMsg && (
                           <div className={`mb-1 px-3 py-1.5 rounded-xl text-[10px] border-l-2 ${isMine ? 'bg-red-50 border-red-300 text-red-400 ml-auto' : 'bg-gray-50 border-gray-300 text-gray-400'}`} style={{ maxWidth: '90%' }}>
@@ -383,10 +441,29 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
                         )}
                         <div className={`px-4 py-2.5 rounded-3xl ${isMine ? 'bg-[#FF4458] text-white rounded-br-md' : 'bg-white text-gray-800 border border-gray-100 rounded-bl-md shadow-sm'}`}>
                           {m.media_url && m.media_type === 'image' && (
-                            <img src={m.media_url} className="rounded-2xl w-full max-w-[240px] h-auto max-h-[280px] object-cover mb-1" loading="lazy" />
+                            <div onClick={() => setViewingMedia(m)} className="cursor-pointer">
+                              <img
+                                src={m.media_url}
+                                className="rounded-2xl w-full max-w-[240px] h-auto max-h-[280px] object-cover mb-1"
+                                loading="lazy"
+                                draggable={false}
+                                onContextMenu={(e) => e.preventDefault()}
+                                style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+                              />
+                            </div>
                           )}
                           {m.media_url && m.media_type === 'video' && (
-                            <video src={m.media_url} controls playsInline className="rounded-2xl w-full max-w-[240px] h-auto max-h-[280px] object-cover mb-1" />
+                            <div onClick={() => setViewingMedia(m)} className="cursor-pointer">
+                              <video
+                                src={m.media_url}
+                                playsInline
+                                className="rounded-2xl w-full max-w-[240px] h-auto max-h-[280px] object-cover mb-1"
+                                controlsList="nodownload"
+                                draggable={false}
+                                onContextMenu={(e) => e.preventDefault()}
+                                style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+                              />
+                            </div>
                           )}
                           {m.text && <p className="text-[14px] leading-relaxed break-words">{m.text}</p>}
                           <div className={`flex items-center gap-1 mt-0.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
@@ -441,10 +518,102 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
             </div>
           </div>
           {viewingOnceMedia.media_type === 'image' ? (
-            <img src={viewingOnceMedia.media_url!} className="max-w-full max-h-full object-contain" />
+            <img
+              src={viewingOnceMedia.media_url!}
+              className="max-w-full max-h-full object-contain"
+              draggable={false}
+              onContextMenu={(e) => e.preventDefault()}
+              style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+            />
           ) : (
-            <video src={viewingOnceMedia.media_url!} autoPlay playsInline className="max-w-full max-h-full object-contain" />
+            <video
+              src={viewingOnceMedia.media_url!}
+              autoPlay
+              playsInline
+              className="max-w-full max-h-full object-contain"
+              controlsList="nodownload"
+              draggable={false}
+              onContextMenu={(e) => e.preventDefault()}
+              style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+            />
           )}
+        </div>
+      )}
+
+      {/* ─── FULLSCREEN MEDIA VIEWER ─────────── */}
+      {viewingMedia && (
+        <div className="fixed inset-0 z-[300] bg-black flex items-center justify-center" onContextMenu={(e) => e.preventDefault()}>
+          <button
+            onClick={() => setViewingMedia(null)}
+            className="absolute top-6 right-6 z-10 w-10 h-10 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center active:scale-90 transition-transform"
+          >
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+          {viewingMedia.media_type === 'image' ? (
+            <img
+              src={viewingMedia.media_url!}
+              className="max-w-full max-h-full object-contain"
+              draggable={false}
+              onContextMenu={(e) => e.preventDefault()}
+              style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+            />
+          ) : (
+            <video
+              src={viewingMedia.media_url!}
+              controls
+              autoPlay
+              playsInline
+              className="max-w-full max-h-full object-contain"
+              controlsList="nodownload"
+              draggable={false}
+              onContextMenu={(e) => e.preventDefault()}
+              style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ─── MESSAGE ACTION MENU ─────────────── */}
+      {selectedMessage && (
+        <div className="fixed inset-0 z-[300] flex items-end justify-center" onClick={() => setSelectedMessage(null)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white w-full max-w-md rounded-t-3xl pb-8 pt-3 px-2 safe-area-bottom" onClick={(e) => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+            <div className="px-3 pb-2 mb-2 border-b border-gray-100">
+              <p className="text-xs text-gray-400 truncate">
+                {selectedMessage.text || (selectedMessage.media_type === 'image' ? 'Photo' : selectedMessage.media_type === 'video' ? 'Video' : 'Message')}
+              </p>
+            </div>
+            <button
+              onClick={() => { handleSwipeReply(selectedMessage); setSelectedMessage(null); }}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl active:bg-gray-50 transition-colors"
+            >
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
+              <span className="text-sm font-medium text-gray-800">Reply</span>
+            </button>
+            <button
+              onClick={() => handleDeleteForMe(selectedMessage)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl active:bg-gray-50 transition-colors"
+            >
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+              <span className="text-sm font-medium text-gray-800">Delete for me</span>
+            </button>
+            {selectedMessage.sender_id === currentUserId && (
+              <button
+                onClick={() => handleDeleteForEveryone(selectedMessage)}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl active:bg-gray-50 transition-colors"
+              >
+                <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                <span className="text-sm font-medium text-red-500">Delete for everyone</span>
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedMessage(null)}
+              className="w-full flex items-center justify-center py-3.5 mt-2 rounded-xl bg-gray-100 active:bg-gray-200 transition-colors"
+            >
+              <span className="text-sm font-semibold text-gray-500">Cancel</span>
+            </button>
+          </div>
         </div>
       )}
 

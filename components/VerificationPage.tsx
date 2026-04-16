@@ -1,282 +1,375 @@
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Profile } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface VerificationPageProps {
   onBack: () => void;
+  currentUser: Profile;
 }
 
-interface UploadStatus {
-  idFront: string | null;
-  idBack: string | null;
-  selfie: string | null;
-}
-
-const VerificationPage: React.FC<VerificationPageProps> = ({ onBack }) => {
-  const [step, setStep] = useState<'upload' | 'selfie' | 'success'>('upload');
+const VerificationPage: React.FC<VerificationPageProps> = ({ onBack, currentUser }) => {
+  const [step, setStep] = useState<'capture' | 'review' | 'submitting' | 'success' | 'already'>('capture');
+  const [capturedPhotos, setCapturedPhotos] = useState<{ blob: Blob; url: string }[]>([]);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploads, setUploads] = useState<UploadStatus>({
-    idFront: null,
-    idBack: null,
-    selfie: null,
-  });
-  
-  const [uploadingField, setUploadingField] = useState<string | null>(null);
-  
-  const idFrontRef = useRef<HTMLInputElement>(null);
-  const idBackRef = useRef<HTMLInputElement>(null);
+  const [existingRequest, setExistingRequest] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const handleFileSelect = async (field: keyof UploadStatus, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // ─── CHECK EXISTING KYC REQUEST ────────────────
+  useEffect(() => {
+    const checkExisting = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from('kyc_verification_requests')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-    // Map field to document type
-    const docTypeMap: Record<keyof UploadStatus, 'idFront' | 'idBack' | 'selfie'> = {
-      idFront: 'idFront',
-      idBack: 'idBack',
-      selfie: 'selfie'
+      if (data && data.length > 0) {
+        const req = data[0];
+        if (req.status === 'pending') {
+          setExistingRequest(req);
+          setStep('already');
+        } else if (req.status === 'rejected') {
+          setExistingRequest(req);
+        }
+      }
+      setLoading(false);
     };
+    checkExisting();
+  }, [currentUser.id]);
 
-    setUploadingField(field);
-    
+  // ─── START CAMERA ──────────────────────────────
+  const startCamera = useCallback(async () => {
+    setCameraError('');
     try {
-      // Demo: use local file preview
-      const imageUrl = URL.createObjectURL(file);
-      setUploads(prev => ({ ...prev, [field]: imageUrl }));
-      setUploadingField(null);
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      alert(error.message || 'Upload failed');
-      setUploadingField(null);
-    }
-    
-    e.target.value = ''; // Reset input
-  };
-
-  const startCamera = async () => {
-    setStep('selfie');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' }, 
-        audio: false 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } },
+        audio: false,
       });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
-    } catch (err) {
-      console.error("Error accessing camera:", err);
-      alert("Please allow camera access to take a selfie.");
-      setStep('upload');
+      setCameraActive(true);
+    } catch {
+      setCameraError('Camera access denied. Please allow camera permission and try again.');
+      setCameraActive(false);
     }
-  };
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-  };
-
-  const takePhoto = async () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-      if (context) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // Convert canvas to blob and upload
-        canvas.toBlob(async (blob) => {
-          if (blob) {
-            setUploadingField('selfie');\n            stopCamera();\n            setStep('upload');
-            
-            try {
-              const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' });
-              const imageUrl = URL.createObjectURL(file);
-              setUploads(prev => ({ ...prev, selfie: imageUrl }));
-              setUploadingField(null);
-            } catch (error: any) {
-              console.error('Selfie upload error:', error);
-              alert('Selfie upload failed');
-              setUploadingField(null);
-            }
-          }
-        }, 'image/jpeg', 0.9);
-      }
-    }
-  };
-
-  useEffect(() => {
-    return () => stopCamera();
   }, []);
 
-  const handleSubmit = () => {
-    if (!uploads.idFront || !uploads.idBack || !uploads.selfie) {
-      alert("Please upload all required documents.");
-      return;
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
-    setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setStep('success');
-    }, 2500);
+    setCameraActive(false);
+  }, []);
+
+  useEffect(() => {
+    if (step === 'capture' && !loading && existingRequest?.status !== 'pending') {
+      startCamera();
+    }
+    return () => stopCamera();
+  }, [step, loading, startCamera, stopCamera, existingRequest]);
+
+  // ─── TAKE PHOTO ────────────────────────────────
+  const takePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          setCapturedPhotos((prev) => {
+            const updated = [...prev, { blob, url }];
+            if (updated.length >= 2) {
+              stopCamera();
+              setStep('review');
+            }
+            return updated;
+          });
+        }
+      },
+      'image/jpeg',
+      0.92
+    );
   };
 
-  if (step === 'success') {
+  // ─── RETAKE ALL ───────────────────────────────
+  const retakeAll = () => {
+    setCapturedPhotos([]);
+    setStep('capture');
+  };
+
+  // ─── SUBMIT KYC ───────────────────────────────
+  const handleSubmit = async () => {
+    if (capturedPhotos.length < 2) return;
+    setIsSubmitting(true);
+    setStep('submitting');
+
+    try {
+      const ts = Date.now();
+      const path1 = `${currentUser.id}/${ts}_photo1.jpg`;
+      const { error: up1 } = await supabase.storage
+        .from('kyc-uploads')
+        .upload(path1, capturedPhotos[0].blob, { contentType: 'image/jpeg' });
+      if (up1) throw up1;
+
+      const path2 = `${currentUser.id}/${ts}_photo2.jpg`;
+      const { error: up2 } = await supabase.storage
+        .from('kyc-uploads')
+        .upload(path2, capturedPhotos[1].blob, { contentType: 'image/jpeg' });
+      if (up2) throw up2;
+
+      const { data: url1 } = supabase.storage.from('kyc-uploads').getPublicUrl(path1);
+      const { data: url2 } = supabase.storage.from('kyc-uploads').getPublicUrl(path2);
+
+      const { error: insertError } = await supabase
+        .from('kyc_verification_requests')
+        .insert({
+          user_id: currentUser.id,
+          live_photo_1: url1.publicUrl,
+          live_photo_2: url2.publicUrl,
+          status: 'pending',
+        });
+      if (insertError) throw insertError;
+
+      await supabase.from('notifications').insert({
+        user_id: currentUser.id,
+        type: 'update',
+        title: 'Verification submitted',
+        message: 'Your verification request has been submitted and is being reviewed.',
+      });
+
+      setStep('success');
+    } catch (err: any) {
+      console.error('KYC submission error:', err);
+      alert('Failed to submit verification. Please try again.');
+      setStep('review');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center p-8 text-center">
-        <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6 animate-bounce">
-          <svg className="w-12 h-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <h2 className="text-2xl font-black text-gray-800 mb-4 uppercase tracking-tighter">Submission Received</h2>
-        <p className="text-gray-500 text-sm font-medium mb-10">Thank you for your submission, you will get a verified badge shortly after our team reviews your documents.</p>
-        <button 
-          onClick={onBack}
-          className="w-full py-4 bg-gray-100 text-gray-800 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-transform"
-        >
-          Close
-        </button>
+      <div className="fixed inset-0 bg-[#fdf8f5] flex items-center justify-center z-[100]">
+        <div className="w-10 h-10 border-[3px] border-gray-200 border-t-blue-500 rounded-full animate-spin" />
       </div>
     );
   }
 
+  // ─── ALREADY PENDING ──────────────────────────
+  if (step === 'already') {
+    return (
+      <div className="fixed inset-0 z-[100] bg-[#fdf8f5] flex flex-col">
+        <header className="p-6 flex items-center gap-4 border-b border-gray-100 bg-white">
+          <button onClick={onBack} className="p-2 -ml-2 text-gray-500 active:scale-90 transition-transform">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <h1 className="text-lg font-black text-gray-800 uppercase tracking-tight">Verification</h1>
+        </header>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <div className="w-20 h-20 bg-yellow-50 rounded-full flex items-center justify-center mb-6">
+            <svg className="w-10 h-10 text-yellow-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-black text-gray-800 uppercase tracking-tight mb-3">Request pending</h2>
+          <p className="text-sm text-gray-500 font-medium max-w-xs">Your verification request is being reviewed by our team. You'll receive a notification once it's processed.</p>
+          <button onClick={onBack} className="mt-8 px-8 py-3.5 bg-gray-100 text-gray-700 rounded-full font-bold text-sm active:scale-95 transition-transform">Go back</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── SUBMITTING (PROCESSING DIALOG) ───────────
+  if (step === 'submitting') {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+        <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+          <div className="w-16 h-16 mx-auto mb-5 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight mb-2">Verification request processing</h3>
+          <p className="text-sm text-gray-500 font-medium">Uploading your photos and submitting your request. Please wait...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── SUCCESS DIALOG ───────────────────────────
+  if (step === 'success') {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+        <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+          <div className="w-20 h-20 mx-auto mb-5 bg-green-50 rounded-full flex items-center justify-center">
+            <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight mb-2">Verification request submitted</h3>
+          <p className="text-sm text-gray-500 font-medium mb-6">Our team will review your photos and verify your profile. You'll receive a notification once approved or rejected.</p>
+          <button onClick={onBack} className="w-full py-4 bg-gradient-to-r from-[#FF4458] to-[#FF7854] text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg">Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── REVIEW STEP ──────────────────────────────
+  if (step === 'review') {
+    return (
+      <div className="fixed inset-0 z-[100] bg-[#fdf8f5] flex flex-col">
+        <header className="p-6 flex items-center gap-4 border-b border-gray-100 bg-white">
+          <button onClick={retakeAll} className="p-2 -ml-2 text-gray-500 active:scale-90 transition-transform">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <h1 className="text-lg font-black text-gray-800 uppercase tracking-tight">Review photos</h1>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <p className="text-sm text-gray-500 font-medium text-center">Review your photos before submitting. Make sure your face is clearly visible.</p>
+
+          <div className="grid grid-cols-2 gap-4">
+            {capturedPhotos.map((photo, idx) => (
+              <div key={idx} className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-gray-100 shadow-sm">
+                <img src={photo.url} className="w-full h-full object-cover" alt={`Photo ${idx + 1}`} />
+                <div className="absolute top-2 left-2 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full">
+                  <span className="text-[10px] font-bold text-white uppercase">Photo {idx + 1}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {existingRequest?.status === 'rejected' && (
+            <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
+              <p className="text-xs font-bold text-red-600 uppercase tracking-wider mb-1">Previous request rejected</p>
+              {existingRequest.admin_notes && (
+                <p className="text-xs text-red-500">{existingRequest.admin_notes}</p>
+              )}
+            </div>
+          )}
+
+          <button onClick={retakeAll} className="w-full py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-sm active:scale-95 transition-transform">
+            Retake photos
+          </button>
+        </div>
+
+        <div className="p-6 bg-white border-t border-gray-100 safe-area-bottom">
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting || capturedPhotos.length < 2}
+            className="w-full py-4 bg-gradient-to-r from-[#FF4458] to-[#FF7854] text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Submitting...</span>
+              </>
+            ) : (
+              'Submit'
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── CAPTURE STEP (MAIN) ──────────────────────
   return (
-    <div className="flex flex-col h-full bg-[#fdf8f5] overflow-y-auto pb-32">
-      <header className="p-6 flex items-center gap-4 border-b border-orange-100 bg-white sticky top-0 z-30">
-        <button onClick={onBack} className="p-2 -ml-2 text-gray-500">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* Header */}
+      <header className="absolute top-0 left-0 right-0 z-10 p-4 flex items-center justify-between">
+        <button onClick={() => { stopCamera(); onBack(); }} className="w-10 h-10 bg-black/30 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
         </button>
-        <h1 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Verification</h1>
+        <div className="bg-black/30 backdrop-blur-md px-4 py-2 rounded-full">
+          <span className="text-white text-xs font-bold">{capturedPhotos.length}/2 photos</span>
+        </div>
+        <div className="w-10" />
       </header>
 
-      <div className="p-8 space-y-10">
-        <div className="space-y-4">
-          <h2 className="text-2xl font-black text-gray-800 leading-tight">Verify your account</h2>
-          <p className="text-gray-500 text-sm">Please upload your government ID and a clear selfie to receive your verified badge.</p>
-        </div>
-
-        <div className="space-y-6">
-          <input type="file" ref={idFrontRef} className="hidden" accept="image/*" onChange={(e) => handleFileSelect('idFront', e)} />
-          <input type="file" ref={idBackRef} className="hidden" accept="image/*" onChange={(e) => handleFileSelect('idBack', e)} />
-          
-          <div className="grid grid-cols-2 gap-4">
-            {/* ID Front */}
-            <div 
-              onClick={() => idFrontRef.current?.click()}
-              className="aspect-square bg-white border-2 border-dashed border-red-100 rounded-3xl flex flex-col items-center justify-center gap-2 p-2 text-center cursor-pointer overflow-hidden group active:scale-95 transition-transform"
-            >
-              {uploads.idFront ? (
-                <img src={uploads.idFront} className="w-full h-full object-cover rounded-2xl" alt="ID Front" />
-              ) : uploadingField === 'idFront' ? (
-                <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  <svg className="w-6 h-6 text-red-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-red-300 leading-tight">ID Front</span>
-                </>
-              )}
+      {/* Camera viewfinder */}
+      <div className="flex-1 relative overflow-hidden">
+        {cameraError ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center h-full">
+            <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+              </svg>
             </div>
-
-            {/* ID Back */}
-            <div 
-              onClick={() => idBackRef.current?.click()}
-              className="aspect-square bg-white border-2 border-dashed border-red-100 rounded-3xl flex flex-col items-center justify-center gap-2 p-2 text-center cursor-pointer overflow-hidden group active:scale-95 transition-transform"
-            >
-              {uploads.idBack ? (
-                <img src={uploads.idBack} className="w-full h-full object-cover rounded-2xl" alt="ID Back" />
-              ) : uploadingField === 'idBack' ? (
-                <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  <svg className="w-6 h-6 text-red-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-red-300 leading-tight">ID Back</span>
-                </>
-              )}
-            </div>
+            <p className="text-white text-sm font-medium mb-4">{cameraError}</p>
+            <button onClick={startCamera} className="px-6 py-3 bg-white/20 backdrop-blur text-white rounded-full text-sm font-bold active:scale-95 transition-transform">
+              Try again
+            </button>
           </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+              style={{ transform: 'scaleX(-1)' }}
+            />
 
-          {/* Selfie Capture */}
-          <div 
-            onClick={startCamera}
-            className="w-full h-48 bg-white border-2 border-dashed border-red-100 rounded-3xl flex flex-col items-center justify-center gap-3 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
-          >
-            {uploads.selfie ? (
-              <div className="relative w-full h-full">
-                <img src={uploads.selfie} className="w-full h-full object-cover" alt="Selfie" />
-                <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                  <div className="bg-white/40 backdrop-blur-md px-4 py-2 rounded-full text-white text-[10px] font-black uppercase tracking-widest">Retake Selfie</div>
-                </div>
+            {/* Face guide overlay */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-56 h-72 border-2 border-white/40 rounded-[50%]" />
+            </div>
+
+            {/* Captured photo thumbnails */}
+            {capturedPhotos.length > 0 && (
+              <div className="absolute bottom-28 left-4 flex gap-2">
+                {capturedPhotos.map((photo, idx) => (
+                  <div key={idx} className="relative">
+                    <img src={photo.url} className="w-14 h-14 rounded-xl object-cover border-2 border-white shadow-lg" alt="" />
+                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center border-2 border-white">
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <>
-                <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                </div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-red-300">Capture Selfie</span>
-              </>
             )}
-          </div>
-        </div>
-
-        <button 
-          onClick={handleSubmit}
-          disabled={isSubmitting || !uploads.idFront || !uploads.idBack || !uploads.selfie}
-          className="w-full py-5 bg-gradient-to-r from-pink-500 to-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 disabled:opacity-50 transition-all"
-        >
-          {isSubmitting ? 'Submitting...' : 'Submit Documents'}
-        </button>
+          </>
+        )}
       </div>
 
-      {/* Selfie Camera Overlay */}
-      {step === 'selfie' && (
-        <div className="fixed inset-0 z-[150] bg-black flex flex-col items-center justify-center animate-in fade-in duration-300">
-          <div className="absolute top-6 right-6">
-            <button 
-              onClick={() => { stopCamera(); setStep('upload'); }} 
-              className="text-white p-2 bg-white/20 backdrop-blur-md rounded-full active:scale-90 transition-transform"
-            >
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-          
-          <div className="relative w-full aspect-square max-w-sm flex items-center justify-center p-6">
-             {/* Oval/Circular Guide */}
-            <div className="absolute inset-0 border-[40px] border-black/80 z-10 pointer-events-none rounded-[100%] overflow-hidden">
-               <div className="w-full h-full bg-transparent border-4 border-white/40 border-dashed rounded-[100%]"></div>
-            </div>
-            
-            <div className="w-full h-full rounded-[100%] overflow-hidden bg-gray-900 border-4 border-white/20">
-              <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline 
-                className="w-full h-full object-cover scale-x-[-1]"
-              />
-            </div>
-          </div>
+      {/* Instructions + capture button */}
+      <div className="bg-black p-6 safe-area-bottom">
+        <p className="text-center text-white/60 text-xs font-medium mb-4">
+          {capturedPhotos.length === 0
+            ? 'Take your first live photo. Keep your face clearly visible.'
+            : 'Now take your second photo from a slightly different angle.'}
+        </p>
 
-          <div className="mt-12 flex flex-col items-center gap-6">
-            <button 
-              onClick={takePhoto}
-              className="w-20 h-20 bg-white rounded-full flex items-center justify-center p-1.5 active:scale-90 transition-transform shadow-[0_0_30px_rgba(255,255,255,0.4)]"
-            >
-              <div className="w-full h-full border-4 border-black/10 rounded-full bg-white shadow-inner flex items-center justify-center">
-                 <div className="w-12 h-12 rounded-full border-2 border-black/5"></div>
-              </div>
-            </button>
-            <p className="text-white/80 text-[10px] font-black uppercase tracking-widest">Center your face in the circle</p>
-          </div>
-
-          <canvas ref={canvasRef} className="hidden" />
+        <div className="flex items-center justify-center">
+          <button
+            onClick={takePhoto}
+            disabled={!cameraActive || capturedPhotos.length >= 2}
+            className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center active:scale-90 transition-transform disabled:opacity-30"
+          >
+            <div className="w-16 h-16 bg-white rounded-full" />
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 };

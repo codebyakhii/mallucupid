@@ -1,6 +1,17 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Profile, WithdrawalRequest, UserReport, ProConfig } from '../types';
+import { supabase } from '../lib/supabase';
+
+interface KycRequest {
+  id: string;
+  user_id: string;
+  status: string;
+  live_photo_1: string;
+  live_photo_2: string;
+  admin_notes: string | null;
+  created_at: string;
+}
 
 interface AdminDashboardProps {
   onBack: () => void;
@@ -45,6 +56,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<WithdrawalRequest | null>(null);
   const [selectedVerifyRequest, setSelectedVerifyRequest] = useState<Profile | null>(null);
   const [userImgIdx, setUserImgIdx] = useState(0);
+  const [kycRequests, setKycRequests] = useState<KycRequest[]>([]);
+  const [kycLoading, setKycLoading] = useState(false);
+  const [selectedKyc, setSelectedKyc] = useState<KycRequest | null>(null);
+  const [kycProcessing, setKycProcessing] = useState(false);
+  const [kycImgIdx, setKycImgIdx] = useState(0);
 
   // Dynamic config form state
   const [editProPrice, setEditProPrice] = useState(proConfig.price.toString());
@@ -60,8 +76,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [users, searchQuery]);
 
   const pendingVerifications = useMemo(() => {
-    return users.filter(u => !u.verified && u.verificationDocs && u.role !== 'admin');
-  }, [users]);
+    return kycRequests.filter(r => r.status === 'pending');
+  }, [kycRequests]);
 
   const pendingWithdrawals = useMemo(() => {
     return withdrawalRequests.filter(r => r.status === 'pending');
@@ -77,6 +93,81 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const openUserDetail = (u: Profile) => {
     setSelectedUser(u);
     setUserImgIdx(0);
+  };
+
+  // ─── FETCH KYC REQUESTS ────────────────────────
+  const fetchKycRequests = async () => {
+    setKycLoading(true);
+    const { data } = await supabase
+      .from('kyc_verification_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (data) setKycRequests(data);
+    setKycLoading(false);
+  };
+
+  useEffect(() => {
+    fetchKycRequests();
+  }, []);
+
+  const getKycUser = (userId: string) => users.find(u => u.id === userId);
+
+  // ─── APPROVE KYC ──────────────────────────────
+  const handleApproveKyc = async (kyc: KycRequest) => {
+    setKycProcessing(true);
+    try {
+      await supabase
+        .from('kyc_verification_requests')
+        .update({ status: 'approved', reviewed_at: new Date().toISOString() })
+        .eq('id', kyc.id);
+
+      await supabase
+        .from('profiles')
+        .update({ verified: true })
+        .eq('id', kyc.user_id);
+
+      await supabase.from('notifications').insert({
+        user_id: kyc.user_id,
+        type: 'update',
+        title: 'Profile verified',
+        message: 'Congratulations! Your profile has been verified. You now have the verified badge.',
+      });
+
+      onVerifyUser(kyc.user_id);
+      setSelectedKyc(null);
+      fetchKycRequests();
+    } catch (err) {
+      console.error('Approve KYC error:', err);
+      alert('Failed to approve. Please try again.');
+    } finally {
+      setKycProcessing(false);
+    }
+  };
+
+  // ─── REJECT KYC ───────────────────────────────
+  const handleRejectKyc = async (kyc: KycRequest) => {
+    setKycProcessing(true);
+    try {
+      await supabase
+        .from('kyc_verification_requests')
+        .update({ status: 'rejected', reviewed_at: new Date().toISOString() })
+        .eq('id', kyc.id);
+
+      await supabase.from('notifications').insert({
+        user_id: kyc.user_id,
+        type: 'update',
+        title: 'Verification rejected',
+        message: 'Your verification request has been rejected. You can reapply with clearer photos.',
+      });
+
+      setSelectedKyc(null);
+      fetchKycRequests();
+    } catch (err) {
+      console.error('Reject KYC error:', err);
+      alert('Failed to reject. Please try again.');
+    } finally {
+      setKycProcessing(false);
+    }
   };
 
   const handleSaveConfig = () => {
@@ -225,6 +316,49 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             ))}
           </div>
         )}
+
+        {/* ─── KYC VERIFICATIONS TAB ──────────────── */}
+        {activeTab === 'verifications' && (
+          <div className="space-y-4">
+            {kycLoading ? (
+              <div className="flex justify-center py-12">
+                <div className="w-8 h-8 border-[3px] border-gray-200 border-t-orange-500 rounded-full animate-spin" />
+              </div>
+            ) : pendingVerifications.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+                </div>
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest">No pending verifications</p>
+              </div>
+            ) : (
+              pendingVerifications.map(kyc => {
+                const kycUser = getKycUser(kyc.user_id);
+                return (
+                  <div key={kyc.id} className="bg-white p-5 rounded-[3rem] shadow-sm border border-gray-100 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
+                      {kycUser?.imageUrl ? (
+                        <img src={kycUser.imageUrl} className="w-14 h-14 rounded-3xl object-cover shadow-inner" />
+                      ) : (
+                        <div className="w-14 h-14 bg-gray-200 rounded-3xl flex items-center justify-center text-gray-400 font-black text-sm">?</div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-widest truncate">{kycUser?.name || 'Unknown'}</p>
+                        <p className="text-[8px] font-bold text-gray-400 uppercase tracking-tight truncate">
+                          {kycUser ? `${kycUser.gender} • ${kycUser.age}y • ${kycUser.location}` : ''}
+                        </p>
+                        <p className="text-[8px] font-bold text-orange-500 uppercase tracking-tight mt-0.5">
+                          {new Date(kyc.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => { setSelectedKyc(kyc); setKycImgIdx(0); }} className="px-6 py-3 bg-orange-50 text-orange-600 rounded-2xl text-[8px] font-black uppercase tracking-widest shadow-sm active:scale-95 transition-transform">Review</button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
 
       {/* DETAILED USER MODAL WITH MANUAL TOGGLES */}
@@ -324,6 +458,108 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* ─── KYC REVIEW MODAL ────────────────────── */}
+      {selectedKyc && (() => {
+        const kycUser = getKycUser(selectedKyc.user_id);
+        const profilePhotos = kycUser?.images || [];
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-3">
+            <div className="absolute inset-0 bg-black/90 backdrop-blur-xl" onClick={() => setSelectedKyc(null)} />
+            <div className="relative bg-[#fdfdfd] rounded-[3rem] w-full overflow-hidden flex flex-col max-h-[95vh] shadow-2xl">
+              {/* Close */}
+              <button onClick={() => setSelectedKyc(null)} className="absolute top-4 right-4 z-10 w-10 h-10 bg-black/20 backdrop-blur-md rounded-full text-white flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+
+              <div className="flex-1 overflow-y-auto">
+                {/* User basic info */}
+                <div className="p-6 bg-orange-50 border-b border-orange-100">
+                  <div className="flex items-center gap-4 mb-4">
+                    {kycUser?.imageUrl ? (
+                      <img src={kycUser.imageUrl} className="w-16 h-16 rounded-3xl object-cover shadow-md" />
+                    ) : (
+                      <div className="w-16 h-16 bg-gray-200 rounded-3xl flex items-center justify-center text-gray-400 font-black">?</div>
+                    )}
+                    <div>
+                      <h3 className="text-lg font-black uppercase tracking-tighter">{kycUser?.name || 'Unknown'}</h3>
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">@{kycUser?.username}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white rounded-2xl p-3">
+                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Date of birth</p>
+                      <p className="text-xs font-black text-gray-800">{kycUser?.dob || 'N/A'}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl p-3">
+                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Gender</p>
+                      <p className="text-xs font-black text-gray-800">{kycUser?.gender || 'N/A'}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl p-3 col-span-2">
+                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Location</p>
+                      <p className="text-xs font-black text-gray-800">{kycUser?.location || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Profile uploaded photos */}
+                {profilePhotos.length > 0 && (
+                  <div className="p-6 border-b border-gray-100">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3">Profile photos ({profilePhotos.length})</p>
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                      {profilePhotos.map((photo, idx) => (
+                        <img key={idx} src={photo} className="w-20 h-24 rounded-xl object-cover flex-shrink-0 border border-gray-100 shadow-sm" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Live KYC photos */}
+                <div className="p-6">
+                  <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest mb-3">Live verification photos</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-gray-100 shadow-sm">
+                      <img src={selectedKyc.live_photo_1} className="w-full h-full object-cover" />
+                      <div className="absolute top-2 left-2 bg-black/50 backdrop-blur-sm px-2 py-0.5 rounded-full">
+                        <span className="text-[8px] font-bold text-white uppercase">Photo 1</span>
+                      </div>
+                    </div>
+                    <div className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-gray-100 shadow-sm">
+                      <img src={selectedKyc.live_photo_2} className="w-full h-full object-cover" />
+                      <div className="absolute top-2 left-2 bg-black/50 backdrop-blur-sm px-2 py-0.5 rounded-full">
+                        <span className="text-[8px] font-bold text-white uppercase">Photo 2</span>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[8px] text-gray-400 font-medium mt-2 text-center">
+                    Submitted {new Date(selectedKyc.created_at).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="p-5 border-t border-gray-100 bg-white space-y-2 safe-area-bottom">
+                <button
+                  onClick={() => handleApproveKyc(selectedKyc)}
+                  disabled={kycProcessing}
+                  className="w-full py-4 bg-[#006400] text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {kycProcessing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : null}
+                  Approve & verify
+                </button>
+                <button
+                  onClick={() => handleRejectKyc(selectedKyc)}
+                  disabled={kycProcessing}
+                  className="w-full py-3 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest text-[9px] shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

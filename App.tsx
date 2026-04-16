@@ -286,6 +286,7 @@ const App: React.FC = () => {
       case 'blockedUsers': return currentUser && <BlockedUsersPage currentUserId={currentUser.id} onBack={() => setView('profile')} allUsers={allUsers} />;
       case 'privateGallery': return currentUser && <PrivateGallery currentUser={currentUser} onBack={() => setView('profile')} />;
       case 'privateGalleryView': return selectedProfile && currentUser && <PrivateGalleryView targetProfile={selectedProfile} currentUserId={currentUser.id} onBack={() => setView('userDetails')} />;
+      case 'verification': return currentUser && <VerificationPage currentUser={currentUser} onBack={() => setView('profile')} />;
       default: return null;
     }
   };

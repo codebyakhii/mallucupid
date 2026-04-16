@@ -201,15 +201,16 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
 
     const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
     const ext = file.name.split('.').pop() || (mediaType === 'image' ? 'jpg' : 'mp4');
+    const bucket = isOnce ? 'chat-once-view' : 'chat-media';
     const filePath = `${currentUserId}/${Date.now()}.${ext}`;
 
     try {
       setUploadProgress(30);
-      const { error: uploadError } = await supabase.storage.from('chat-media').upload(filePath, file);
+      const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file);
       if (uploadError) throw uploadError;
       setUploadProgress(70);
 
-      const { data: urlData } = supabase.storage.from('chat-media').getPublicUrl(filePath);
+      const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
       setUploadProgress(90);
 
       const { data, error } = await supabase

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Profile, ProConfig, ProPlan } from './types';
+import { View, Profile, ProConfig, ProPlan, AppConfig } from './types';
 import { LANDING_BG } from './constants';
 import { supabase } from './lib/supabase';
 import { loginWithEmail, fetchUserProfile, fetchAllProfiles, signOut, getCurrentSession } from './lib/auth';
@@ -67,8 +67,8 @@ const App: React.FC = () => {
   const [selectedPlan, setSelectedPlan] = useState<ProPlan | null>(null);
   const [purchasingPro, setPurchasingPro] = useState(false);
   const [showRewindPro, setShowRewindPro] = useState(false);
+  const [appConfig, setAppConfig] = useState<AppConfig>({ dailyLikeLimit: 0, freeMessageLimit: 0 });
   const suppressPopState = React.useRef(false);
-  const DAILY_LIKE_LIMIT = 100;
 
   // Wrapped setView that also updates the URL
   const setView = React.useCallback((newView: View) => {
@@ -135,6 +135,16 @@ const App: React.FC = () => {
             // Fetch pro plans
             const { data: plans } = await supabase.from('pro_plans').select('*').eq('active', true).order('sort_order');
             if (plans) setProPlans(plans.map((p: any) => ({ id: p.id, name: p.name, label: p.label, price: p.price, durationDays: p.duration_days, description: p.description, badgeText: p.badge_text, isPopular: p.is_popular, sortOrder: p.sort_order })));
+            // Fetch app config (limits from DB)
+            const { data: configRows } = await supabase.from('app_config').select('key, value');
+            if (configRows) {
+              const cfgMap: Record<string, string> = {};
+              configRows.forEach((r: any) => { cfgMap[r.key] = r.value; });
+              setAppConfig({
+                dailyLikeLimit: parseInt(cfgMap['daily_like_limit'] || '0', 10),
+                freeMessageLimit: parseInt(cfgMap['free_message_limit'] || '0', 10),
+              });
+            }
             // Fetch unread message count
             const { count: msgCount } = await supabase.from('messages').select('id', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('status', 'sent').eq('deleted_for_receiver', false);
             if (typeof msgCount === 'number') setUnreadMessageCount(msgCount);
@@ -337,7 +347,7 @@ const App: React.FC = () => {
     if (!currentUser) return;
     if (!currentUser.verified) return;
     // Free user swipe limit check
-    if (!isPro && dailyLikeCount >= DAILY_LIKE_LIMIT) {
+    if (!isPro && appConfig.dailyLikeLimit > 0 && dailyLikeCount >= appConfig.dailyLikeLimit) {
       setShowLikeLimit(true);
       return;
     }
@@ -499,14 +509,14 @@ const App: React.FC = () => {
           onUpdateProConfig={handleUpdateProConfig}
         />
       );
-      case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} isPro={isPro} dailyLikeCount={dailyLikeCount} dailyLikeLimit={DAILY_LIKE_LIMIT} onRewindPro={() => setShowRewindPro(true)} />;
+      case 'discover': return currentUser && <Discover users={allUsers} onLike={handleLike} onDislike={() => {}} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} blockedIds={blockedIds} currentUser={currentUser} activeRequests={activeRequests} isPro={isPro} dailyLikeCount={dailyLikeCount} dailyLikeLimit={appConfig.dailyLikeLimit} onRewindPro={() => setShowRewindPro(true)} />;
       case 'userDetails': return selectedProfile && currentUser && (
         <UserDetails profile={allUsers.find(u => u.id === selectedProfile.id) || selectedProfile} currentUser={currentUser} currentUserId={currentUser.id} onBack={() => setView('discover')}
           onOpenPrivateGallery={() => setView('privateGalleryView')}
           onChat={() => setView('chat')}
           isPro={isPro} onGetPro={() => setShowProPlans(true)} onConnectionChange={() => refreshConnectionData()} />
       );
-      case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} isPro={isPro} onGetPro={() => setShowProPlans(true)} proPrice={proConfig.price} />;
+      case 'chat': return selectedProfile && currentUser && <ChatPage targetProfile={selectedProfile} onBack={() => setView('userDetails')} currentUserId={currentUser.id} isPro={isPro} onGetPro={() => setShowProPlans(true)} proPrice={proConfig.price} freeMessageLimit={appConfig.freeMessageLimit} />;
       case 'inbox': return currentUser && <InboxPage currentUser={currentUser} friends={linkedProfiles} onSelectChat={(p) => { setSelectedProfile(p); setView('chat'); }} onDeleteChat={() => refreshConnectionData()} isPro={isPro} onGetPro={() => setShowProPlans(true)} />;
       case 'friends': return currentUser && <FriendsPage currentUserId={currentUser.id} allUsers={allUsers} onShowDetails={(p) => { setSelectedProfile(p); setView('userDetails'); }} onConnectionChange={() => refreshConnectionData()} />;
       case 'notifications': return currentUser && <AlertsPage currentUserId={currentUser.id} isVerified={currentUser.verified} allUsers={allUsers} onConnectionAccepted={() => refreshConnectionData()} />;
@@ -673,7 +683,7 @@ const App: React.FC = () => {
               <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" /></svg>
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">Daily limit reached</h3>
-            <p className="text-sm text-gray-500 mb-1">You've used all {DAILY_LIKE_LIMIT} likes for today.</p>
+            <p className="text-sm text-gray-500 mb-1">You've used all {appConfig.dailyLikeLimit} likes for today.</p>
             <p className="text-sm text-gray-500 mb-6">Upgrade to Pro for unlimited likes every day.</p>
             <div className="space-y-2.5">
               <button onClick={() => { setShowLikeLimit(false); setShowProPlans(true); }} className="w-full py-3.5 bg-gradient-to-r from-[#FF4458] to-[#FF6B6B] text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg">

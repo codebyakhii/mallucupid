@@ -32,11 +32,10 @@ interface ChatPageProps {
   isPro?: boolean;
   onGetPro?: () => void;
   proPrice?: number;
+  freeMessageLimit?: number;
 }
 
-const FREE_MESSAGE_LIMIT = 5;
-
-const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserId, isPro, onGetPro, proPrice }) => {
+const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserId, isPro, onGetPro, proPrice, freeMessageLimit = 0 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -177,7 +176,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
 
   // ─── SENT MESSAGE COUNT (for free user limit) ──
   const sentCount = messages.filter(m => m.sender_id === currentUserId && !m.deleted_for_everyone).length;
-  const messageLimitReached = !isPro && sentCount >= FREE_MESSAGE_LIMIT;
+  const messageLimitReached = !isPro && freeMessageLimit > 0 && sentCount >= freeMessageLimit;
 
   // ─── SEND TEXT MESSAGE ─────────────────────────
   const handleSendText = async () => {
@@ -666,7 +665,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
             </div>
             <h3 className="text-xl font-black uppercase tracking-tighter mb-2 text-gray-800">Message Limit</h3>
             <p className="text-sm font-medium text-gray-500 mb-8 leading-relaxed">
-              You've used your {FREE_MESSAGE_LIMIT} free messages with {targetProfile.name.split(' ')[0]}. Upgrade to Pro for unlimited messaging!
+              You've used your {freeMessageLimit} free messages with {targetProfile.name.split(' ')[0]}. Upgrade to Pro for unlimited messaging!
             </p>
             <div className="space-y-3">
               {onGetPro && (
@@ -790,7 +789,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ targetProfile, onBack, currentUserI
               className="w-full bg-gray-100 rounded-full px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-100 placeholder-gray-400" />
           </div>
           {!isPro && sentCount > 0 && (
-            <span className="text-[9px] font-bold text-gray-400 flex-shrink-0">{FREE_MESSAGE_LIMIT - sentCount} left</span>
+            <span className="text-[9px] font-bold text-gray-400 flex-shrink-0">{freeMessageLimit - sentCount} left</span>
           )}
           {inputText.trim() ? (
             <button onClick={handleSendText} className="w-10 h-10 rounded-full bg-[#FF4458] flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform flex-shrink-0">

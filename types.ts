@@ -149,4 +149,9 @@ export interface ProPlan {
   sortOrder: number;
 }
 
+export interface AppConfig {
+  dailyLikeLimit: number;
+  freeMessageLimit: number;
+}
+
 

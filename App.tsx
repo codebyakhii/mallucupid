@@ -435,6 +435,10 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-cover bg-center flex flex-col justify-end" style={{ backgroundImage: `url(${LANDING_BG})` }}>
           <div className="p-8 pb-16 flex flex-col items-center w-full bg-gradient-to-t from-black/80 to-transparent">
             <button onClick={() => navigateToView('login')} className="w-full max-w-xs py-5 bg-[#006400] text-white rounded-full font-bold uppercase tracking-widest shadow-xl active:scale-95 transition-all">Get Started</button>
+            <a href="/mallucupid.apk" download className="mt-3 w-full max-w-xs py-4 bg-white/10 backdrop-blur-sm border border-white/20 text-white rounded-full font-bold uppercase tracking-widest text-sm text-center active:scale-95 transition-all flex items-center justify-center gap-2">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.523 2.234a.75.75 0 00-1.046 0L14.5 4.211l-1.977-1.977a.75.75 0 10-1.046 1.046l1.727 1.727H6.75A2.25 2.25 0 004.5 7.257v12a2.25 2.25 0 002.25 2.25h10.5a2.25 2.25 0 002.25-2.25v-12a2.25 2.25 0 00-2.25-2.25h-1.454l1.727-1.727a.75.75 0 000-1.046zM12 9.757a.75.75 0 01.75.75v3.94l1.22-1.22a.75.75 0 111.06 1.06l-2.5 2.5a.75.75 0 01-1.06 0l-2.5-2.5a.75.75 0 111.06-1.06l1.22 1.22v-3.94a.75.75 0 01.75-.75z"/></svg>
+              Download Android App
+            </a>
             <div className="mt-6 flex gap-6">
               <button onClick={() => navigateToView('terms')} className="text-[10px] font-black uppercase tracking-widest text-white/50 hover:text-white transition-colors">Terms & Conditions</button>
               <button onClick={() => navigateToView('privacy')} className="text-[10px] font-black uppercase tracking-widest text-white/50 hover:text-white transition-colors">Privacy Policy</button>
